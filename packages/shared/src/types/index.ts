@@ -265,6 +265,11 @@ export type {
   CompanyArtifactSource,
   CompanyArtifactsResponse,
 } from "./artifact.js";
+
+export type {
+  ExternalObject,
+  ExternalObjectMention,
+} from "./external-object.js";
 export type {
   Issue,
   IssueWorkMode,
