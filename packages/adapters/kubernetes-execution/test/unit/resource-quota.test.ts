@@ -42,7 +42,9 @@ describe("buildLimitRange", () => {
       override: null,
     });
     const container = lr.spec?.limits?.find((l) => l.type === "Container");
-    expect(container?.default?.cpu).toBe(defaultTenantLimits.default.cpu);
+    // The k8s typed client renames `default` → `_default` because `default` is a reserved
+    // word in TypeScript. The wire format still uses `default`; we assert the JS field name.
+    expect(container?._default?.cpu).toBe(defaultTenantLimits.default.cpu);
     expect(container?.defaultRequest?.memory).toBe(defaultTenantLimits.defaultRequest.memory);
     expect(container?.max?.cpu).toBe(defaultTenantLimits.max.cpu);
     const pvc = lr.spec?.limits?.find((l) => l.type === "PersistentVolumeClaim");
@@ -57,7 +59,7 @@ describe("buildLimitRange", () => {
       override: { default: { cpu: "2" } },
     });
     const container = lr.spec?.limits?.find((l) => l.type === "Container");
-    expect(container?.default?.cpu).toBe("2");
-    expect(container?.default?.memory).toBe(defaultTenantLimits.default.memory);
+    expect(container?._default?.cpu).toBe("2");
+    expect(container?._default?.memory).toBe(defaultTenantLimits.default.memory);
   });
 });
