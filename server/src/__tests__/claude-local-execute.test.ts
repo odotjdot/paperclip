@@ -635,6 +635,16 @@ describe("claude execute", () => {
       });
 
       expect(result.exitCode).toBe(0);
+      expect(result.sessionParams).toMatchObject({
+        cwd: localWorkspace,
+        remoteExecution: {
+          transport: "sandbox",
+          providerKey: "e2b",
+          environmentId: "env-1",
+          leaseId: "lease-1",
+          remoteCwd: remoteWorkspace,
+        },
+      });
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
       expect(capture.argv).toContain("--allowedTools");
       expect(capture.argv).toContain(

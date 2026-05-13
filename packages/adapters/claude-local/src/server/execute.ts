@@ -853,7 +853,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const resolvedSessionParams = resolvedSessionId
       ? ({
         sessionId: resolvedSessionId,
-        cwd: effectiveExecutionCwd,
+        cwd,
         promptBundleKey: promptBundle.bundleKey,
         ...(executionTargetIsRemote
           ? {
