@@ -3116,7 +3116,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
     let escalation: Awaited<ReturnType<typeof issuesSvc.create>>;
     try {
       escalation = await issuesSvc.create(issue.companyId, {
-        title: `Unblock liveness incident for ${recoveryIssue.identifier ?? recoveryIssue.title}`,
+        title: `Restore live path for ${recoveryIssue.identifier ?? recoveryIssue.title}`,
         description: buildLivenessEscalationDescription(input.finding),
         status: "todo",
         priority: "high",
