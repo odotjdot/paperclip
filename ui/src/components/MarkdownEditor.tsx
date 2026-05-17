@@ -603,6 +603,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   const [mentionState, setMentionState] = useState<MentionState | null>(null);
   const mentionStateRef = useRef<MentionState | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const autocompleteOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const skillEnterArmedRef = useRef(false);
   const autocompleteSelectionHandledRef = useRef(false);
   const mentionActive = mentionState !== null && (
@@ -647,11 +648,10 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         .filter((command) => {
           if (!q) return true;
           return command.aliases.some((alias) => alias.toLowerCase().includes(q));
-        })
-        .slice(0, 8);
+        });
     }
     if (!mentions) return [];
-    return mentions.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 8);
+    return mentions.filter((m) => m.name.toLowerCase().includes(q));
   }, [mentionState, mentions, slashCommands]);
 
   useImperativeHandle(forwardedRef, () => ({
@@ -895,6 +895,18 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       window.removeEventListener("scroll", updatePosition, true);
     };
   }, [checkMention, mentionActive]);
+
+  useEffect(() => {
+    if (!mentionActive) return;
+    autocompleteOptionRefs.current.length = filteredMentions.length;
+    if (mentionIndex >= filteredMentions.length) {
+      setMentionIndex(Math.max(0, filteredMentions.length - 1));
+      return;
+    }
+    const activeOption = autocompleteOptionRefs.current[mentionIndex];
+    if (!activeOption || typeof activeOption.scrollIntoView !== "function") return;
+    activeOption.scrollIntoView({ block: "nearest" });
+  }, [filteredMentions.length, mentionActive, mentionIndex]);
 
   useEffect(() => {
     if (mentionActive) return;
@@ -1242,6 +1254,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         createPortal(
           <div
             data-paperclip-floating-ui=""
+            data-testid="mention-autocomplete-menu"
             className="pointer-events-auto fixed z-[9999] min-w-[180px] max-w-[calc(100vw-16px)] max-h-[208px] overflow-y-auto rounded-md border border-border bg-popover shadow-md"
             style={{
               top: mentionMenuPosition.top,
@@ -1255,6 +1268,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
                 key={option.id}
                 type="button"
                 tabIndex={-1}
+                ref={(node) => {
+                  autocompleteOptionRefs.current[i] = node;
+                }}
                 className={cn(
                   "flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-accent/50 transition-colors",
                   i === mentionIndex && "bg-accent",
