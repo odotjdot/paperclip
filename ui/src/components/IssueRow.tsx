@@ -152,11 +152,11 @@ export function IssueRow({
               <span className="shrink-0 font-mono text-xs text-muted-foreground">
                 {identifier}
               </span>
-              {planningModeIndicator}
               {parkedBlockerIndicator}
               {recoveryIndicator}
             </>
           )}
+          {planningModeIndicator}
           {mobileMeta ? (
             <>
               <span className="text-xs text-muted-foreground sm:hidden" aria-hidden="true">
