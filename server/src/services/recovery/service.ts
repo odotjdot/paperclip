@@ -2380,21 +2380,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
 
     const openRecoveryIssues = recoveryIssueRows.flatMap((row) => {
       if (row.originKind === RECOVERY_ORIGIN_KINDS.issueGraphLivenessEscalation) {
-        const parsed = parseIssueGraphLivenessIncidentKey(row.originId);
-        if (!parsed || parsed.companyId !== row.companyId) return [];
-        if (parsed.state !== "blocked_by_assigned_backlog_issue") return [];
-        return [
-          {
-            companyId: row.companyId,
-            issueId: parsed.issueId,
-            status: row.status,
-          },
-          {
-            companyId: row.companyId,
-            issueId: parsed.leafIssueId,
-            status: row.status,
-          },
-        ];
+        return [];
       }
 
       const issueId = readNonEmptyString(row.originId);
@@ -2574,6 +2560,32 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
     return Boolean(contextRun || issueRun);
   }
 
+  async function hasActiveIssueGraphLivenessActionForLegacyRecovery(recovery: typeof issues.$inferSelect) {
+    const parsed = parseLivenessIncidentKey(recovery.originId);
+    if (!parsed || parsed.companyId !== recovery.companyId) return false;
+    const expectedFingerprint = recovery.originFingerprint && recovery.originFingerprint !== "default"
+      ? recovery.originFingerprint
+      : livenessRecoveryLeafKey(parsed.companyId, parsed.state, parsed.leafIssueId);
+
+    const row = await db
+      .select({ id: issueRecoveryActions.id })
+      .from(issueRecoveryActions)
+      .where(
+        and(
+          eq(issueRecoveryActions.companyId, recovery.companyId),
+          eq(issueRecoveryActions.sourceIssueId, parsed.leafIssueId),
+          eq(issueRecoveryActions.kind, "issue_graph_liveness"),
+          eq(issueRecoveryActions.cause, "issue_graph_liveness"),
+          eq(issueRecoveryActions.fingerprint, expectedFingerprint),
+          inArray(issueRecoveryActions.status, ["active", "escalated"]),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+
+    return Boolean(row);
+  }
+
   async function retireObsoleteLivenessRecoveryIssues(findings: IssueLivenessFinding[]) {
     const currentIncidentKeys = new Set(findings.map((finding) => finding.incidentKey));
     const currentLeafKeys = new Set(
@@ -2603,14 +2615,14 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
     };
 
     for (const recovery of openRecoveries) {
-      if (recovery.originId && currentIncidentKeys.has(recovery.originId)) continue;
       const parsed = parseLivenessIncidentKey(recovery.originId);
       if (!parsed) continue;
-      if (
-        currentLeafKeys.has(
-          livenessRecoveryLeafKey(parsed.companyId, parsed.state, parsed.leafIssueId),
-        )
-      ) {
+      const hasCurrentIncidentFinding = Boolean(recovery.originId && currentIncidentKeys.has(recovery.originId));
+      const hasCurrentLeafFinding = currentLeafKeys.has(
+        livenessRecoveryLeafKey(parsed.companyId, parsed.state, parsed.leafIssueId),
+      );
+      const sourceScopedActionTookOver = await hasActiveIssueGraphLivenessActionForLegacyRecovery(recovery);
+      if ((hasCurrentIncidentFinding || hasCurrentLeafFinding) && !sourceScopedActionTookOver) {
         continue;
       }
       if (await removeRecoveryBlockerFromSource(recovery)) {
@@ -3308,6 +3320,12 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
         result.skipped += 1;
       }
     }
+
+    const postRecoveryCleanup = await retireObsoleteLivenessRecoveryIssues(findings);
+    result.obsoleteRecoveriesRetired += postRecoveryCleanup.retired;
+    result.obsoleteRecoveriesActiveSkipped += postRecoveryCleanup.activeSkipped;
+    result.obsoleteRecoveryBlockerRelationsRemoved += postRecoveryCleanup.blockerRelationsRemoved;
+    result.retiredRecoveryIssueIds.push(...postRecoveryCleanup.retiredIssueIds);
 
     return result;
   }
