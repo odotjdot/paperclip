@@ -577,10 +577,6 @@ export function ChangesTab({ context }: PluginDetailTabProps) {
   }, []);
 
   useEffect(() => {
-    fileSidebarWidthRef.current = fileSidebarWidth;
-  }, [fileSidebarWidth]);
-
-  useEffect(() => {
     if (!fileSidebarResizing || typeof document === "undefined") return;
 
     const previousCursor = document.body.style.cursor;
@@ -644,7 +640,7 @@ export function ChangesTab({ context }: PluginDetailTabProps) {
             <button
               key="working-tree"
               type="button"
-              className={buttonClass(view === "working-tree")}
+              className={buttonClass(effectiveView === "working-tree")}
               onClick={() => {
                 viewTouchedRef.current = true;
                 setView("working-tree");
@@ -655,7 +651,7 @@ export function ChangesTab({ context }: PluginDetailTabProps) {
             <button
               key="head"
               type="button"
-              className={buttonClass(view === "head")}
+              className={buttonClass(effectiveView === "head")}
               onClick={() => {
                 viewTouchedRef.current = true;
                 setView("head");
