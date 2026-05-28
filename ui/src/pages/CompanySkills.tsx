@@ -682,7 +682,7 @@ function CatalogList({
     <div>
       {bundled.length > 0 && kindFilter !== "optional" ? (
         <div>
-          <div className="sticky top-0 z-[1] border-b border-border bg-background px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="border-b border-border bg-background px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Bundled · {bundled.length}
           </div>
           {bundled.map(renderRow)}
@@ -690,7 +690,7 @@ function CatalogList({
       ) : null}
       {optional.length > 0 && kindFilter !== "bundled" ? (
         <div>
-          <div className="sticky top-0 z-[1] border-b border-border bg-background px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="border-b border-border bg-background px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Optional · {optional.length}
           </div>
           {optional.map(renderRow)}
@@ -698,7 +698,7 @@ function CatalogList({
       ) : null}
       {installed.length > 0 ? (
         <div>
-          <div className="sticky top-0 z-[1] border-b border-border bg-background px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="border-b border-border bg-background px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Installed · {installed.length}
           </div>
           {installed.map(renderRow)}
