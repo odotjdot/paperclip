@@ -230,6 +230,27 @@ export {
 } from "./document-annotation.js";
 
 export {
+  acceptDocumentSuggestionSchema,
+  createDocumentReviewCommentSchema,
+  createDocumentReviewThreadSchema,
+  createDocumentSuggestionCommentSchema,
+  createDocumentSuggestionSchema,
+  documentReviewThreadStatusSchema,
+  documentSuggestionInsertPositionSchema,
+  documentSuggestionKindSchema,
+  documentSuggestionStatusSchema,
+  rejectDocumentSuggestionSchema,
+  updateDocumentReviewThreadSchema,
+  type AcceptDocumentSuggestion,
+  type CreateDocumentReviewComment,
+  type CreateDocumentReviewThread,
+  type CreateDocumentSuggestion,
+  type CreateDocumentSuggestionComment,
+  type RejectDocumentSuggestion,
+  type UpdateDocumentReviewThread,
+} from "./document-review.js";
+
+export {
   createIssueSchema,
   createIssueInputSchema,
   createChildIssueSchema,

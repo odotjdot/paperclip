@@ -338,6 +338,9 @@ export type IssueReferenceSourceKind = (typeof ISSUE_REFERENCE_SOURCE_KINDS)[num
 export const DOCUMENT_ANNOTATION_THREAD_STATUSES = ["open", "resolved"] as const;
 export type DocumentAnnotationThreadStatus = (typeof DOCUMENT_ANNOTATION_THREAD_STATUSES)[number];
 
+export const DOCUMENT_REVIEW_THREAD_STATUSES = ["open", "resolved"] as const;
+export type DocumentReviewThreadStatus = (typeof DOCUMENT_REVIEW_THREAD_STATUSES)[number];
+
 export const DOCUMENT_ANNOTATION_ANCHOR_STATES = ["active", "stale", "orphaned"] as const;
 export type DocumentAnnotationAnchorState = (typeof DOCUMENT_ANNOTATION_ANCHOR_STATES)[number];
 
@@ -350,6 +353,15 @@ export const DOCUMENT_ANNOTATION_ANCHOR_CONFIDENCES = [
 ] as const;
 export type DocumentAnnotationAnchorConfidence =
   (typeof DOCUMENT_ANNOTATION_ANCHOR_CONFIDENCES)[number];
+
+export const DOCUMENT_SUGGESTION_KINDS = ["insertion", "deletion", "substitution"] as const;
+export type DocumentSuggestionKind = (typeof DOCUMENT_SUGGESTION_KINDS)[number];
+
+export const DOCUMENT_SUGGESTION_INSERT_POSITIONS = ["before", "after"] as const;
+export type DocumentSuggestionInsertPosition = (typeof DOCUMENT_SUGGESTION_INSERT_POSITIONS)[number];
+
+export const DOCUMENT_SUGGESTION_STATUSES = ["pending", "accepted", "rejected"] as const;
+export type DocumentSuggestionStatus = (typeof DOCUMENT_SUGGESTION_STATUSES)[number];
 
 export const DOCUMENT_STATUSES = ["draft", "in_review", "approved", "archived"] as const;
 export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];

@@ -23,6 +23,11 @@ export interface DocumentBacklink {
 export interface DocumentFeedbackCounts {
   openComments: number;
   resolvedComments: number;
+  openReviewThreads: number;
+  resolvedReviewThreads: number;
+  pendingSuggestions: number;
+  acceptedSuggestions: number;
+  rejectedSuggestions: number;
   staleAnchors: number;
   orphanedAnchors: number;
 }

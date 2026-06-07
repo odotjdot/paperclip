@@ -6,6 +6,8 @@ import {
   documentAnnotationThreads,
   documentLinks,
   documentRevisions,
+  documentReviewThreads,
+  documentSuggestions,
   documents,
   goals,
   heartbeatRuns,
@@ -223,6 +225,11 @@ function emptyFeedbackCounts(): DocumentFeedbackCounts {
   return {
     openComments: 0,
     resolvedComments: 0,
+    openReviewThreads: 0,
+    resolvedReviewThreads: 0,
+    pendingSuggestions: 0,
+    acceptedSuggestions: 0,
+    rejectedSuggestions: 0,
     staleAnchors: 0,
     orphanedAnchors: 0,
   };
@@ -258,10 +265,60 @@ export function documentService(db: Db) {
 
     for (const row of rows) {
       result.set(row.documentId, {
+        ...emptyFeedbackCounts(),
         openComments: row.openComments,
         resolvedComments: row.resolvedComments,
         staleAnchors: row.staleAnchors,
         orphanedAnchors: row.orphanedAnchors,
+      });
+    }
+    const reviewRows = await db
+      .select({
+        documentId: documentReviewThreads.documentId,
+        openReviewThreads: sql<number>`count(*) filter (where ${documentReviewThreads.status} = 'open')`.mapWith(Number),
+        resolvedReviewThreads: sql<number>`count(*) filter (where ${documentReviewThreads.status} = 'resolved')`.mapWith(Number),
+      })
+      .from(documentReviewThreads)
+      .where(and(
+        eq(documentReviewThreads.companyId, companyId),
+        inArray(documentReviewThreads.documentId, documentIds),
+      ))
+      .groupBy(documentReviewThreads.documentId);
+
+    for (const row of reviewRows) {
+      const existing = result.get(row.documentId) ?? emptyFeedbackCounts();
+      result.set(row.documentId, {
+        ...existing,
+        openReviewThreads: row.openReviewThreads,
+        resolvedReviewThreads: row.resolvedReviewThreads,
+      });
+    }
+
+    const suggestionRows = await db
+      .select({
+        documentId: documentSuggestions.documentId,
+        pendingSuggestions: sql<number>`count(*) filter (where ${documentSuggestions.status} = 'pending')`.mapWith(Number),
+        acceptedSuggestions: sql<number>`count(*) filter (where ${documentSuggestions.status} = 'accepted')`.mapWith(Number),
+        rejectedSuggestions: sql<number>`count(*) filter (where ${documentSuggestions.status} = 'rejected')`.mapWith(Number),
+        staleAnchors: sql<number>`count(*) filter (where ${documentSuggestions.anchorState} = 'stale' and ${documentSuggestions.status} = 'pending')`.mapWith(Number),
+        orphanedAnchors: sql<number>`count(*) filter (where ${documentSuggestions.anchorState} = 'orphaned' and ${documentSuggestions.status} = 'pending')`.mapWith(Number),
+      })
+      .from(documentSuggestions)
+      .where(and(
+        eq(documentSuggestions.companyId, companyId),
+        inArray(documentSuggestions.documentId, documentIds),
+      ))
+      .groupBy(documentSuggestions.documentId);
+
+    for (const row of suggestionRows) {
+      const existing = result.get(row.documentId) ?? emptyFeedbackCounts();
+      result.set(row.documentId, {
+        ...existing,
+        pendingSuggestions: row.pendingSuggestions,
+        acceptedSuggestions: row.acceptedSuggestions,
+        rejectedSuggestions: row.rejectedSuggestions,
+        staleAnchors: existing.staleAnchors + row.staleAnchors,
+        orphanedAnchors: existing.orphanedAnchors + row.orphanedAnchors,
       });
     }
     return result;
@@ -461,12 +518,22 @@ export function documentService(db: Db) {
         )`);
       }
       if (query.hasOpenFeedback) {
-        conditions.push(sql`exists (
+        conditions.push(sql`(exists (
           select 1 from ${documentAnnotationThreads}
           where ${documentAnnotationThreads.companyId} = ${documents.companyId}
             and ${documentAnnotationThreads.documentId} = ${documents.id}
             and ${documentAnnotationThreads.status} = 'open'
-        )`);
+        ) or exists (
+          select 1 from ${documentReviewThreads}
+          where ${documentReviewThreads.companyId} = ${documents.companyId}
+            and ${documentReviewThreads.documentId} = ${documents.id}
+            and ${documentReviewThreads.status} = 'open'
+        ) or exists (
+          select 1 from ${documentSuggestions}
+          where ${documentSuggestions.companyId} = ${documents.companyId}
+            and ${documentSuggestions.documentId} = ${documents.id}
+            and ${documentSuggestions.status} = 'pending'
+        ))`);
       }
 
       const rows = await db

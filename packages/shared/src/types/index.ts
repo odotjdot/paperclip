@@ -175,6 +175,24 @@ export type {
   DocumentFeedbackCounts,
   DocumentLink,
 } from "./document.js";
+export type {
+  AcceptDocumentSuggestionRequest,
+  CreateDocumentReviewCommentRequest,
+  CreateDocumentReviewThreadRequest,
+  CreateDocumentSuggestionCommentRequest,
+  CreateDocumentSuggestionRequest,
+  DocumentReviewComment,
+  DocumentReviewIndex,
+  DocumentReviewIndexCounts,
+  DocumentReviewThread,
+  DocumentReviewThreadWithComments,
+  DocumentSuggestion,
+  DocumentSuggestionAnchorRemapSnapshot,
+  DocumentSuggestionComment,
+  DocumentSuggestionWithComments,
+  RejectDocumentSuggestionRequest,
+  UpdateDocumentReviewThreadRequest,
+} from "./document-review.js";
 export type { Project, ProjectBudgetSummary, ProjectCodebase, ProjectCodebaseOrigin, ProjectGoalRef, ProjectManagedByPlugin, ProjectWorkspace } from "./project.js";
 export type {
   CompanySearchHighlight,
