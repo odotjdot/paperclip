@@ -10407,12 +10407,19 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           return { kind: "skipped" as const, dependencyGate: true as const };
         }
 
-        if (!activeExecutionRun && reason === BLOCKER_RELEASE_WAKE_REASON && effectiveIdempotencyKey) {
+        if (reason === BLOCKER_RELEASE_WAKE_REASON && effectiveIdempotencyKey) {
           const existingReleaseWake = await findExistingBlockerReleaseWake(tx, {
             companyId: issue.companyId,
             idempotencyKey: effectiveIdempotencyKey,
           });
           if (existingReleaseWake) {
+            const existingReleaseRun = existingReleaseWake.runId
+              ? await tx
+                .select()
+                .from(heartbeatRuns)
+                .where(eq(heartbeatRuns.id, existingReleaseWake.runId))
+                .then((rows) => rows[0] ?? null)
+              : null;
             await tx.insert(agentWakeupRequests).values({
               companyId: agent.companyId,
               agentId,
@@ -10435,7 +10442,9 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                 updatedAt: new Date(),
               })
               .where(eq(agentWakeupRequests.id, existingReleaseWake.id));
-            return { kind: "duplicate" as const };
+            return existingReleaseRun
+              ? { kind: "existing" as const, run: existingReleaseRun }
+              : { kind: "duplicate" as const };
           }
         }
 
@@ -10601,6 +10610,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       });
 
       if (outcome.kind === "deferred" || outcome.kind === "duplicate") return null;
+      if (outcome.kind === "existing") return outcome.run;
       if (outcome.kind === "skipped") {
         if ("dependencyGate" in outcome && outcome.dependencyGate && reason === BLOCKER_RELEASE_WAKE_REASON) {
           await requeueBlockerReleaseWakeIfDependencyGateCleared({
