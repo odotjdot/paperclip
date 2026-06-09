@@ -711,6 +711,13 @@ export function WorkspaceFileBrowser({
     });
     return set;
   }, [folderPageQueries, folderPageSpecs]);
+  const lazyErroredFolders = useMemo(() => {
+    const set = new Set<string>();
+    folderPageSpecs.forEach((spec, index) => {
+      if (folderPageQueries[index]?.isError) set.add(spec.path);
+    });
+    return set;
+  }, [folderPageQueries, folderPageSpecs]);
   const allLoadedItems = useMemo(() => {
     if (!isLazyBrowse) return items;
     return Array.from(lazyItemsByFolder.values()).flat();
@@ -719,10 +726,12 @@ export function WorkspaceFileBrowser({
     () => allLoadedItems.filter((item): item is WorkspaceFileListFileItem => item.kind === "file"),
     [allLoadedItems],
   );
-  const treeNodes = useMemo(
-    () => isLazyBrowse ? buildWorkspaceDirectoryTree(items) : buildWorkspaceFileTree(items, folderPath),
-    [folderPath, isLazyBrowse, items],
-  );
+  const treeNodes = useMemo(() => {
+    if (isLazyBrowse) {
+      return buildWorkspaceDirectoryTree(lazyItemsByFolder.get(currentFolderKey) ?? items);
+    }
+    return buildWorkspaceFileTree(items, folderPath);
+  }, [currentFolderKey, folderPath, isLazyBrowse, items, lazyItemsByFolder]);
   const selectedItemIndex = selectedPath
     ? allLoadedFileItems.findIndex((item) =>
       item.relativePath === selectedPath &&
@@ -746,6 +755,37 @@ export function WorkspaceFileBrowser({
     }
     setHighlightedIndex(allLoadedFileItems.length > 0 ? 0 : -1);
   }, [allLoadedFileItems.length, q, workspace, source, selectedProjectId, selectedWorkspaceId, folderPath, selectedPath, selectedItemIndex]);
+
+  useEffect(() => {
+    if (!selectedPath || !isLazyBrowse) return;
+    const selectedFolderKey = folderKey(parentFolderPath(selectedPath));
+    if (selectedFolderKey !== currentFolderKey && !loadedLazyFolders.includes(selectedFolderKey)) return;
+    if (!lazyTruncatedFolders.has(selectedFolderKey)) return;
+    if (lazyFetchingFolders.has(selectedFolderKey) || lazyErroredFolders.has(selectedFolderKey)) return;
+    const loadedItems = lazyItemsByFolder.get(selectedFolderKey) ?? [];
+    const selectedLoaded = loadedItems.some((item) =>
+      item.kind === "file" &&
+      item.relativePath === selectedPath &&
+      (activeProjectId ? item.projectId === activeProjectId : true) &&
+      (activeWorkspaceId ? item.workspaceId === activeWorkspaceId : true)
+    );
+    if (selectedLoaded) return;
+    setFolderPageCounts((current) => ({
+      ...current,
+      [selectedFolderKey]: (current[selectedFolderKey] ?? 1) + 1,
+    }));
+  }, [
+    activeProjectId,
+    activeWorkspaceId,
+    currentFolderKey,
+    isLazyBrowse,
+    lazyErroredFolders,
+    lazyFetchingFolders,
+    lazyItemsByFolder,
+    lazyTruncatedFolders,
+    loadedLazyFolders,
+    selectedPath,
+  ]);
 
   const announcement = useMemo(() => {
     if (listQuery.isFetching) return "Loading workspace files…";

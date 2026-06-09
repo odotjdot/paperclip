@@ -17,6 +17,7 @@ function act(callback: () => void | Promise<void>) {
 }
 
 const useQueryMock = vi.fn();
+const LIST_LIMIT = 100;
 
 vi.mock("@tanstack/react-query", async () => {
   const actual = await vi.importActual<typeof import("@tanstack/react-query")>("@tanstack/react-query");
@@ -83,6 +84,17 @@ function availableResponse(items: WorkspaceFileListItem[], truncated = false): W
     scannedCount: items.length,
     truncated,
   };
+}
+
+function availableAllResponse(
+  items: WorkspaceFileListItem[],
+  path: string | null,
+  truncated = false,
+  offset = 0,
+): WorkspaceFileListResponse {
+  const response = availableResponse(items, truncated);
+  response.query = { ...response.query, mode: "all", path, offset };
+  return response;
 }
 
 function createWorkspace(overrides: Partial<ProjectWorkspace> = {}): ProjectWorkspace {
@@ -405,6 +417,46 @@ describe("WorkspaceFileBrowser", () => {
     expect(container.textContent).toContain("refine the search to narrow");
   });
 
+  it("renders newly loaded current-folder rows after Load more", () => {
+    const folderPath = "ui/src/components";
+    const pageZero = availableAllResponse([
+      createItem({
+        title: "IssueLinkQuicklook.tsx",
+        relativePath: `${folderPath}/IssueLinkQuicklook.tsx`,
+        displayPath: `${folderPath}/IssueLinkQuicklook.tsx`,
+      }),
+    ], folderPath, true, 0);
+    const pageOne = availableAllResponse([
+      createItem({
+        title: "SourceTrustBadge.tsx",
+        relativePath: `${folderPath}/SourceTrustBadge.tsx`,
+        displayPath: `${folderPath}/SourceTrustBadge.tsx`,
+      }),
+    ], folderPath, true, LIST_LIMIT);
+    useQueryMock.mockImplementation((options: { queryKey: readonly unknown[] }) => {
+      const query = options.queryKey[4] as { path?: string | null; offset?: number } | undefined;
+      if (query?.path === folderPath && query.offset === LIST_LIMIT) return ok(pageOne);
+      return ok(pageZero);
+    });
+
+    renderBrowser(vi.fn(), {
+      compact: true,
+      autoFocusSearch: false,
+      initialFolderPath: folderPath,
+    });
+
+    expect(container.textContent).toContain("IssueLinkQuicklook.tsx");
+    expect(container.textContent).not.toContain("SourceTrustBadge.tsx");
+    const loadMore = Array.from(container.querySelectorAll("button")).find(
+      (el) => el.textContent === "Load more from this folder",
+    );
+    act(() => {
+      loadMore!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(container.textContent).toContain("SourceTrustBadge.tsx");
+  });
+
   it("opens the highlighted row when Enter is pressed in the search field", () => {
     useQueryMock.mockReturnValue(ok(availableResponse([createItem()])));
     const { onOpen } = renderBrowser();
@@ -666,6 +718,58 @@ describe("WorkspaceFileBrowser", () => {
     );
     expect(selected?.getAttribute("aria-selected")).toBe("true");
     expect(container.textContent).toContain("setup-commands.md");
+  });
+
+  it("auto-pages the selected file's current folder until the selected row is loaded", async () => {
+    const folderPath = "ui/src/components";
+    const selectedPath = `${folderPath}/WorkspaceFileBrowser.tsx`;
+    const pageZero = availableAllResponse([
+      createItem({
+        title: "ActivityCharts.tsx",
+        relativePath: `${folderPath}/ActivityCharts.tsx`,
+        displayPath: `${folderPath}/ActivityCharts.tsx`,
+      }),
+    ], folderPath, true, 0);
+    const pageOne = availableAllResponse([
+      createItem({
+        title: "SourceTrustBadge.tsx",
+        relativePath: `${folderPath}/SourceTrustBadge.tsx`,
+        displayPath: `${folderPath}/SourceTrustBadge.tsx`,
+      }),
+    ], folderPath, true, LIST_LIMIT);
+    const pageTwo = availableAllResponse([
+      createItem({
+        title: "WorkspaceFileBrowser.tsx",
+        relativePath: selectedPath,
+        displayPath: selectedPath,
+      }),
+    ], folderPath, false, LIST_LIMIT * 2);
+    useQueryMock.mockImplementation((options: { queryKey: readonly unknown[] }) => {
+      const query = options.queryKey[4] as { path?: string | null; offset?: number } | undefined;
+      if (query?.path === folderPath && query.offset === LIST_LIMIT) return ok(pageOne);
+      if (query?.path === folderPath && query.offset === LIST_LIMIT * 2) return ok(pageTwo);
+      return ok(pageZero);
+    });
+
+    renderBrowser(vi.fn(), {
+      compact: true,
+      autoFocusSearch: false,
+      initialFolderPath: folderPath,
+      selectedPath,
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    const pageTwoCall = useQueryMock.mock.calls.find(
+      ([options]) => options.queryKey?.[4]?.path === folderPath && options.queryKey[4].offset === LIST_LIMIT * 2,
+    );
+    expect(pageTwoCall?.[0].queryKey[4]).toMatchObject({ path: folderPath, offset: LIST_LIMIT * 2 });
+    const selected = Array.from(container.querySelectorAll('[role="treeitem"]')).find(
+      (el) => el.getAttribute("title") === selectedPath,
+    );
+    expect(selected?.getAttribute("aria-selected")).toBe("true");
+    expect(container.textContent).toContain("WorkspaceFileBrowser.tsx");
   });
 
   it("lets breadcrumb folders navigate to parent directories", () => {
