@@ -1,9 +1,31 @@
+import { createContext, useContext, type ReactNode } from "react";
 import { NavLink } from "@/lib/router";
 import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { useSidebar } from "../context/SidebarContext";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { LucideIcon } from "lucide-react";
+
+/**
+ * Forces the full-label (non-rail) presentation for any `SidebarNavItem`
+ * rendered beneath it, regardless of the global `useSidebar().collapsed` state.
+ *
+ * Takeover routes (PAP-10695) collapse the app `<Sidebar/>` to its 64px rail
+ * and render the contextual nav in a fixed 240px `SecondarySidebar`. That pane
+ * is always wide enough for labels, but its `SidebarNavItem` children still
+ * read the *global* `collapsed=true` and would otherwise render icon-only —
+ * leaving the settings nav unreadable (PAP-10700). Wrapping the pane in this
+ * provider decouples its items from the global rail collapse.
+ */
+const SidebarNavExpandedContext = createContext(false);
+
+export function SidebarNavExpandedProvider({ children }: { children: ReactNode }) {
+  return (
+    <SidebarNavExpandedContext.Provider value={true}>
+      {children}
+    </SidebarNavExpandedContext.Provider>
+  );
+}
 
 interface SidebarNavItemProps {
   to: string;
@@ -39,9 +61,13 @@ export function SidebarNavItem({
   liveCount,
 }: SidebarNavItemProps) {
   const { isMobile, setSidebarOpen, collapsed, peeking } = useSidebar();
+  // A fixed-width contextual pane (SecondarySidebar) forces full labels even
+  // when the global app sidebar is collapsed to its rail (PAP-10700).
+  const forceExpanded = useContext(SidebarNavExpandedContext);
   // The icon-only rail presentation only applies when pinned collapsed and not
-  // peeking; a peek/expanded panel restores the full label + badge.
-  const rail = collapsed && !peeking;
+  // peeking; a peek/expanded panel — or an expanded contextual pane — restores
+  // the full label + badge.
+  const rail = collapsed && !peeking && !forceExpanded;
 
   const hasBadge = badge != null && badge > 0;
   const hasLive = liveCount != null && liveCount > 0;

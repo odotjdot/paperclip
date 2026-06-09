@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Inbox } from "lucide-react";
-import { SidebarNavItem } from "./SidebarNavItem";
+import { SidebarNavItem, SidebarNavExpandedProvider } from "./SidebarNavItem";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const sidebarState = vi.hoisted(() => ({
@@ -111,6 +111,26 @@ describe("SidebarNavItem", () => {
     expect(label?.className).not.toContain("sr-only");
     expect(container.textContent).toContain("28");
     expect(link().getAttribute("aria-label")).toBeNull();
+  });
+
+  it("forces the full label inside an expanded contextual pane even when globally collapsed", () => {
+    // The takeover model collapses the global sidebar (collapsed=true) while the
+    // 240px SecondarySidebar still needs readable labels (PAP-10700). The
+    // provider must override the global rail collapse.
+    sidebarState.collapsed = true;
+    render(
+      <SidebarNavExpandedProvider>
+        <SidebarNavItem to="/inbox" label="Inbox" icon={Inbox} badge={28} badgeLabel="unread" />
+      </SidebarNavExpandedProvider>,
+    );
+
+    const label = Array.from(container.querySelectorAll("span")).find((el) => el.textContent === "Inbox");
+    expect(label?.className).not.toContain("w-0");
+    expect(label?.className).toContain("flex-1");
+    // Full numeric badge, no rail aria-label, no tooltip wrapper.
+    expect(container.textContent).toContain("28");
+    expect(link().getAttribute("aria-label")).toBeNull();
+    expect(link().parentElement?.getAttribute("data-slot")).not.toBe("tooltip-trigger");
   });
 
   it("surfaces the live count in the rail aria-label", () => {

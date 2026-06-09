@@ -97,6 +97,28 @@ test.describe("Sidebar takeover (collapse + secondary pane)", () => {
     await expect(page.getByLabel(APP_SIDEBAR_EXPANDED_MARKER)).toHaveCount(0);
   });
 
+  test("renders the secondary pane nav labels at full width despite the app rail collapse", async ({ page }) => {
+    // Regression (PAP-10700): the secondary pane is 240px wide, but its
+    // SidebarNavItem children read the *global* collapsed state and used to
+    // render icon-only (label `w-0 text-transparent`), making the settings nav
+    // unreadable in the default takeover state. The pane must force full labels.
+    await page.goto(`/${prefix}/company/settings`);
+
+    const secondary = page.locator("[data-secondary-sidebar]");
+    await expect(secondary).toBeVisible();
+
+    // App sidebar is collapsed to its rail (default unpinned takeover state)...
+    await expect(page.getByLabel(APP_SIDEBAR_EXPANDED_MARKER)).toHaveCount(0);
+
+    // ...yet a settings nav label renders at its full text width, not clipped to
+    // zero. "Environments" is unique to the company-settings nav.
+    const envLabel = secondary.getByText("Environments", { exact: true });
+    await expect(envLabel).toBeVisible();
+    const labelBox = await envLabel.boundingBox();
+    expect(labelBox).not.toBeNull();
+    expect(labelBox!.width).toBeGreaterThan(20);
+  });
+
   test("an explicit expanded pin overrides the route-driven collapse", async ({ page }) => {
     // User has pinned the sidebar expanded ("0"). The settings route still
     // requests a collapse, but the pin must win (pin > route request > default).

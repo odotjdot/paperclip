@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { SidebarNavExpandedProvider } from "./SidebarNavItem";
 
 /**
  * Fixed-width contextual pane that sits between the collapsed app rail and the
@@ -12,6 +13,10 @@ import { cn } from "@/lib/utils";
  * It is a dumb container — fixed `w-60`, full-height, non-shrinking, with a
  * right border and its own vertical scroll — so callers just drop the
  * contextual nav (or a plugin slot mount) inside as `children`.
+ *
+ * Because the pane is always 240px wide it forces the full-label presentation
+ * on any `SidebarNavItem` inside it, so the contextual nav stays readable even
+ * while the app sidebar is collapsed to its rail (PAP-10700).
  */
 export function SecondarySidebar({
   children,
@@ -28,7 +33,7 @@ export function SecondarySidebar({
         className,
       )}
     >
-      {children}
+      <SidebarNavExpandedProvider>{children}</SidebarNavExpandedProvider>
     </div>
   );
 }
