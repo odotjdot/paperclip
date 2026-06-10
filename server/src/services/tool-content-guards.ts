@@ -40,12 +40,22 @@ function scanPromptInjection(value: unknown): string[] {
     .map((pattern) => pattern.code);
 }
 
-function signingSecret() {
-  const secret = process.env.PAPERCLIP_TOOL_ACTION_SIGNING_SECRET?.trim();
+export function resolveToolActionSigningSecret(
+  env: Partial<Pick<
+    NodeJS.ProcessEnv,
+    "PAPERCLIP_TOOL_ACTION_SIGNING_SECRET" | "PAPERCLIP_AGENT_JWT_SECRET" | "BETTER_AUTH_SECRET"
+  >> = process.env,
+) {
+  const secret = env.PAPERCLIP_TOOL_ACTION_SIGNING_SECRET?.trim();
   if (!secret) {
     throw new Error("PAPERCLIP_TOOL_ACTION_SIGNING_SECRET is required for signed tool action approvals");
   }
   return secret;
+}
+
+function signingSecret(explicitSecret?: string) {
+  const secret = explicitSecret?.trim();
+  return secret || resolveToolActionSigningSecret();
 }
 
 export function canonicalToolArguments(value: unknown) {
@@ -56,13 +66,18 @@ export function hashToolValue(value: unknown) {
   return createHash("sha256").update(stableSerialize(value)).digest("hex");
 }
 
-export function signToolArguments(args: { invocationId: string; toolName: string; canonicalArguments: string }) {
+export function signToolArguments(args: {
+  invocationId: string;
+  toolName: string;
+  canonicalArguments: string;
+  signingSecret?: string;
+}) {
   const payload = stableSerialize({
     invocationId: args.invocationId,
     toolName: args.toolName,
     canonicalArguments: args.canonicalArguments,
   });
-  const signature = createHmac("sha256", signingSecret()).update(payload).digest("base64url");
+  const signature = createHmac("sha256", signingSecret(args.signingSecret)).update(payload).digest("base64url");
   return Buffer.from(JSON.stringify({ version: 1, alg: "HS256", payload, signature }), "utf8").toString("base64url");
 }
 
@@ -71,6 +86,7 @@ export function verifyToolArgumentsSignature(input: {
   invocationId: string;
   toolName: string;
   canonicalArguments: string;
+  signingSecret?: string;
 }) {
   if (!input.signedArguments) return false;
   let parsed: { version?: unknown; alg?: unknown; payload?: unknown; signature?: unknown };
@@ -87,7 +103,7 @@ export function verifyToolArgumentsSignature(input: {
     canonicalArguments: input.canonicalArguments,
   });
   if (parsed.payload !== expectedPayload) return false;
-  const expected = createHmac("sha256", signingSecret()).update(parsed.payload).digest("base64url");
+  const expected = createHmac("sha256", signingSecret(input.signingSecret)).update(parsed.payload).digest("base64url");
   const left = Buffer.from(parsed.signature);
   const right = Buffer.from(expected);
   return left.length === right.length && timingSafeEqual(left, right);
@@ -97,6 +113,7 @@ export function readSignedToolArguments(input: {
   signedArguments: string | null | undefined;
   invocationId: string;
   toolName: string;
+  signingSecret?: string;
 }) {
   if (!input.signedArguments) return null;
   let parsed: { payload?: unknown };
@@ -119,6 +136,7 @@ export function readSignedToolArguments(input: {
     invocationId: input.invocationId,
     toolName: input.toolName,
     canonicalArguments: payload.canonicalArguments,
+    signingSecret: input.signingSecret,
   })) {
     return null;
   }

@@ -274,6 +274,7 @@ export function createToolGatewayService(
     deploymentExposure?: DeploymentExposure;
     trustedLocalStdioRuntimeHost?: string | null;
     runtimeSupervisor?: ToolRuntimeSupervisorOptions;
+    toolActionSigningSecret?: string;
   } = {},
 ) {
   const runtimeSupervisor = createToolRuntimeSupervisor(db, {
@@ -643,6 +644,7 @@ export function createToolGatewayService(
       invocationId: input.invocation.id,
       toolName: input.tool.name,
       canonicalArguments,
+      signingSecret: options.toolActionSigningSecret,
     });
     const previewMarkdown = [
       `Tool: \`${input.tool.name}\``,
@@ -1149,7 +1151,9 @@ export function createToolGatewayService(
             signedArguments: actionRequest.signedArguments,
             invocationId: invocation.id,
             toolName: invocation.toolName,
+            signingSecret: options.toolActionSigningSecret,
           }) ?? {}),
+          signingSecret: options.toolActionSigningSecret,
         })
       ) {
         throw new ToolGatewayHttpError(409, "Tool action request signature is invalid", "signed_arguments_invalid");
@@ -1325,6 +1329,7 @@ export function createToolGatewayService(
           signedArguments: actionRequest.signedArguments,
           invocationId: storedInvocation.id,
           toolName: storedInvocation.toolName,
+          signingSecret: options.toolActionSigningSecret,
         });
         if (!storedParameters) {
           throw new ToolGatewayHttpError(409, "Approved tool action arguments signature is invalid", "signed_arguments_invalid");
@@ -1343,6 +1348,7 @@ export function createToolGatewayService(
             invocationId: storedInvocation.id,
             toolName: storedInvocation.toolName,
             canonicalArguments: storedCanonical,
+            signingSecret: options.toolActionSigningSecret,
           })
         ) {
           throw new ToolGatewayHttpError(409, "Approved tool action arguments do not match reviewed hash", "signed_arguments_mismatch");
