@@ -43,11 +43,11 @@ import { resolveRouteOnboardingOptions } from "../lib/onboarding-route";
 import { OnboardingChat } from "./OnboardingChat";
 import { AsciiArtAnimation } from "./AsciiArtAnimation";
 import { FrontDoor } from "./FrontDoor";
+import { AgentCapsule } from "./AgentCapsule";
 import {
   Building2,
   Bot,
   ListTodo,
-  Rocket,
   ArrowLeft,
   ArrowRight,
   Sparkles,
@@ -400,7 +400,7 @@ export function OnboardingWizard() {
   const [q4, setQ4] = useState((saved?.q4 as string) ?? ""); // What would success look like?
 
   // Step 2
-  const [agentName, setAgentName] = useState((saved?.agentName as string) ?? "CEO");
+  const [agentName, setAgentName] = useState((saved?.agentName as string) ?? "Chief of staff");
   const [adapterType, setAdapterType] = useState<AdapterType>((saved?.adapterType as AdapterType) ?? "claude_local");
   const [cwd, setCwd] = useState((saved?.cwd as string) ?? "");
   const [model, setModel] = useState((saved?.model as string) ?? "");
@@ -571,6 +571,10 @@ export function OnboardingWizard() {
   }, [step, adapterType, model, command, args, url]);
 
   const selectedModel = (adapterModels ?? []).find((m) => m.id === model);
+  // Capsule lifecycle (PAP-121 / Option 4 motif): an empty `slot` until the
+  // lead is named, then `configured` once it has a name + a model connected.
+  // Step 3 always renders `online` because the agent has been created by then.
+  const leadCapsuleState = agentName.trim() ? "configured" : "slot";
   const hasAnthropicApiKeyOverrideCheck =
     adapterEnvResult?.checks.some(
       (check) =>
@@ -637,7 +641,7 @@ export function OnboardingWizard() {
     setPlanContent(null);
     setHiringRoles([]);
     setShowRawPlan(false);
-    setAgentName("CEO");
+    setAgentName("Chief of staff");
     setAdapterType("claude_local");
     setModel("");
     setCommand("");
@@ -1049,7 +1053,7 @@ export function OnboardingWizard() {
                   [
                     { step: 1 as Step, label: "Mission", icon: Building2 },
                     { step: 2 as Step, label: "Team lead", icon: Bot },
-                    { step: 3 as Step, label: "Launch", icon: Rocket },
+                    { step: 3 as Step, label: "Review", icon: Check },
                   ] as const
                 ).map(({ step: s, label, icon: Icon }) => (
                   <button
@@ -1426,7 +1430,7 @@ export function OnboardingWizard() {
                 </div>
               )}
 
-              {/* Step 2: Create your CEO */}
+              {/* Step 2: Create your team lead + connect a model */}
               {step === 2 && (
                 <div className="space-y-5">
                   <div className="flex items-center gap-3 mb-1">
@@ -1434,21 +1438,36 @@ export function OnboardingWizard() {
                       <Bot className="h-5 w-5 text-muted-foreground" />
                     </div>
                     <div>
-                      <h3 className="font-medium">Hire your team lead</h3>
+                      <h3 className="font-medium">Create your team lead</h3>
                       <p className="text-xs text-muted-foreground">
-                        Give your team lead a heartbeat. They'll help lead{" "}
+                        Name your lead and connect a model. They'll help drive{" "}
                         <span className="font-medium text-foreground">{companyName}</span>{" "}
-                        toward its mission. Most people call this role CEO, which is why that's the default name.
+                        toward its mission. We default to{" "}
+                        <span className="font-medium text-foreground">Chief of staff</span> —
+                        rename it to anything you like.
                       </p>
                     </div>
                   </div>
+
+                  {/* Capsule motif (Option 4): an empty slot fills in as the
+                      lead takes shape — dashed when unnamed, solid once named
+                      and a model is connected below. */}
+                  <div className="flex flex-col items-center gap-1.5 py-1">
+                    <AgentCapsule state={leadCapsuleState} gradient={4} size="md" />
+                    <p className="text-[10px] text-muted-foreground">
+                      {leadCapsuleState === "slot"
+                        ? "an empty slot for an agent"
+                        : "your team lead, taking shape"}
+                    </p>
+                  </div>
+
                   <div>
                     <label className="text-xs text-muted-foreground mb-1 block">
-                      Agent name
+                      Name
                     </label>
                     <input
                       className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                      placeholder="CEO"
+                      placeholder="Chief of staff"
                       value={agentName}
                       onChange={(e) => setAgentName(e.target.value)}
                       autoFocus
@@ -1803,20 +1822,48 @@ export function OnboardingWizard() {
                 </div>
               )}
 
-              {/* Step 3: Launch celebration → exits to chat */}
+              {/* Step 3: Review — lead comes online (capsule fills + pulses) */}
               {step === 3 && (
-                <div className="space-y-6 text-center py-4">
-                  <div className="text-5xl">🚀</div>
-                  <div>
-                    <h3 className="text-xl font-semibold">{companyName} is live!</h3>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Your team is set up. {agentName} is ready.
-                    </p>
-                    <p className="text-sm font-medium mt-1 italic">
-                      "{companyGoal}"
-                    </p>
+                <div className="space-y-6 py-2">
+                  {/* Review checklist — everything that's now set up */}
+                  <div className="space-y-1.5">
+                    {[
+                      { label: "Team name", done: Boolean(companyName.trim()) },
+                      { label: "Mission", done: Boolean(companyGoal.trim()) },
+                      { label: "Agent created", done: Boolean(createdAgentId) },
+                      { label: "Model connected", done: Boolean(createdAgentId) },
+                    ].map(({ label, done }) => (
+                      <div key={label} className="flex items-center gap-2 text-sm">
+                        <span
+                          className={cn(
+                            "flex h-4 w-4 items-center justify-center rounded-full shrink-0",
+                            done
+                              ? "bg-green-500/15 text-green-600 dark:text-green-400"
+                              : "bg-muted text-muted-foreground"
+                          )}
+                        >
+                          <Check className="h-2.5 w-2.5" />
+                        </span>
+                        <span className={done ? "text-foreground" : "text-muted-foreground"}>
+                          {label}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                  <p className="text-xs text-muted-foreground">
+
+                  {/* The capsule fills with the brand gradient + pulses online */}
+                  <div className="flex flex-col items-center gap-2 py-2 text-center">
+                    <AgentCapsule state="online" gradient={4} size="lg" />
+                    <div>
+                      <h3 className="text-lg font-semibold">
+                        {agentName} is online and ready to work!
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1 italic">
+                        "{companyGoal}"
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">
                     Start a conversation with {agentName} to discuss strategy and plan who to bring on.
                   </p>
                 </div>
@@ -1948,7 +1995,7 @@ export function OnboardingWizard() {
                       onClick={() => setStep(4)}
                     >
                       <MessageSquare className="h-3 w-3" />
-                      Revise with CEO
+                      Revise with your lead
                     </button>
                   )}
 
@@ -2114,8 +2161,8 @@ export function OnboardingWizard() {
                       size="sm"
                       onClick={handleLaunchToChat}
                     >
-                      <Rocket className="h-3.5 w-3.5 mr-1" />
-                      Launch company
+                      <ArrowRight className="h-3.5 w-3.5 mr-1" />
+                      Get started
                     </Button>
                   )}
                   {step === 4 && !planContent && (
@@ -2143,7 +2190,7 @@ export function OnboardingWizard() {
                   )}
                   {step === 6 && (
                     <Button size="sm" onClick={handleFinishOnboarding}>
-                      <Rocket className="h-3.5 w-3.5 mr-1" />
+                      <ArrowRight className="h-3.5 w-3.5 mr-1" />
                       Go to dashboard
                     </Button>
                   )}
