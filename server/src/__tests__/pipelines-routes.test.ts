@@ -280,6 +280,58 @@ describeEmbeddedPostgres("pipeline routes", () => {
     await http.delete(`/api/pipelines/${pipelineId}/stages/${stageId}?moveCasesToStageId=${qaStage.body.id}`).expect(200);
   });
 
+  it("allows same-company agents to create pipelines without an explicit pipelines:write grant", async () => {
+    const company = await seedCompany();
+    const [agent] = await db.insert(agents).values({
+      companyId: company.id,
+      name: "Pipeline Builder",
+      role: "engineer",
+      status: "idle",
+      adapterType: "codex_local",
+    }).returning();
+    await db.insert(companyMemberships).values({
+      companyId: company.id,
+      principalType: "agent",
+      principalId: agent!.id,
+      status: "active",
+      membershipRole: "member",
+    });
+    const runId = randomUUID();
+    const agentActor: Express.Request["actor"] = {
+      type: "agent",
+      agentId: agent!.id,
+      companyId: company.id,
+      runId,
+      source: "agent_key",
+    };
+
+    const res = await request(app(agentActor))
+      .post(`/api/companies/${company.id}/pipelines`)
+      .send({
+        key: "agent-created",
+        name: "Agent Created",
+      })
+      .expect(201);
+
+    expect(res.body).toMatchObject({
+      key: "agent-created",
+      createdByAgentId: agent!.id,
+    });
+    await request(app(agentActor))
+      .patch(`/api/pipelines/${res.body.id}`)
+      .send({ name: "Agent Created Updated" })
+      .expect(200);
+    await request(app(agentActor))
+      .post(`/api/pipelines/${res.body.id}/cases`)
+      .send({ caseKey: "agent-created-case", title: "Agent created case" })
+      .expect(201);
+    const grants = await db
+      .select()
+      .from(principalPermissionGrants)
+      .where(eq(principalPermissionGrants.principalId, agent!.id));
+    expect(grants).toHaveLength(0);
+  });
+
   it("lists a case's children across pipeline boundaries via /cases/:caseId/children", async () => {
     const company = await seedCompany();
     const http = request(app(boardActor));

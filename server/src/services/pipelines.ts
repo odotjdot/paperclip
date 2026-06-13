@@ -308,7 +308,10 @@ function readBreakdownConfig(config?: PipelineStageConfig | null): PipelineBreak
   };
 }
 
-function childrenGateConfig(config?: PipelineStageConfig | null) {
+function childrenGateConfig(
+  config?: PipelineStageConfig | null,
+  options: { explicitZeroChildrenPass?: boolean } = {},
+) {
   const breakdown = readBreakdownConfig(config);
   return {
     requireChildrenTerminal: breakdown?.waitForPieces ?? config?.requireChildrenTerminal === true,
@@ -317,7 +320,7 @@ function childrenGateConfig(config?: PipelineStageConfig | null) {
         ? config.autoAdvanceOnChildrenTerminal.trim()
         : null
     ),
-    explicitZeroChildrenPass: Boolean(breakdown && breakdown.waitForPieces),
+    explicitZeroChildrenPass: options.explicitZeroChildrenPass === true,
   };
 }
 
@@ -1144,6 +1147,7 @@ async function assertLatestReviewApprovalStillCurrent(
   current: typeof pipelineCases.$inferSelect,
   fromStage: typeof pipelineStages.$inferSelect,
   toStage: typeof pipelineStages.$inferSelect,
+  options: { allowWorkflowVersionDrift?: boolean } = {},
 ) {
   if (fromStage.kind === "review" || toStage.kind !== "done") return;
   const latestApproval = await db
@@ -1166,6 +1170,21 @@ async function assertLatestReviewApprovalStillCurrent(
       ? payload.approvedCaseVersion
       : null;
   if (approvedVersion === null || approvedVersion === current.version) return;
+  if (options.allowWorkflowVersionDrift) {
+    const materialUpdate = await db
+      .select({ id: pipelineCaseEvents.id })
+      .from(pipelineCaseEvents)
+      .where(and(
+        eq(pipelineCaseEvents.companyId, current.companyId),
+        eq(pipelineCaseEvents.caseId, current.id),
+        eq(pipelineCaseEvents.type, "updated"),
+        sql`${pipelineCaseEvents.createdAt} > ${latestApproval.createdAt.toISOString()}`,
+        sql`${pipelineCaseEvents.payload}->>'materialChanged' = 'true'`,
+      ))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    if (!materialUpdate) return;
+  }
   throw conflict("Pipeline case changed since review approval; send it back through review before publishing", {
     code: "review_outdated",
     reviewEventId: latestApproval.id,
@@ -2086,7 +2105,9 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
     if (fromStage.id !== toStage.id) {
       assertActorCanApproveStageExit(fromStage, input.actor);
       await assertStageTransitionGates(tx, current, fromStage, { skipChildrenTerminalGate: input.skipChildrenTerminalGate });
-      await assertLatestReviewApprovalStillCurrent(tx, current, fromStage, toStage);
+      await assertLatestReviewApprovalStillCurrent(tx, current, fromStage, toStage, {
+        allowWorkflowVersionDrift: input.transitionClass === "auto" && input.reason === "children_terminal",
+      });
     }
     const toConfig = stageConfig(toStage);
     if (toConfig.autonomy === "auto") {
@@ -2252,11 +2273,14 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
     companyId: string,
     parentCaseId: string | null | undefined,
     automationLedgers?: Array<typeof pipelineAutomationExecutions.$inferSelect>,
+    options: { allowExplicitZeroChildrenPass?: boolean } = {},
   ) {
     const ancestors = await getAncestorCases(tx, companyId, parentCaseId);
     for (const ancestor of ancestors) {
       const rollup = await computeCaseRollup(tx, companyId, ancestor.case.id);
-      const gate = childrenGateConfig(stageConfig(ancestor.stage));
+      const gate = childrenGateConfig(stageConfig(ancestor.stage), {
+        explicitZeroChildrenPass: options.allowExplicitZeroChildrenPass,
+      });
       if (!rollup.complete || (rollup.total === 0 && !gate.explicitZeroChildrenPass) || await hasCaseEvent(tx, ancestor.case.id, "children_terminal")) {
         continue;
       }
@@ -2953,11 +2977,6 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
           skipChildrenTerminalGate: true,
         });
         parent = transitioned.case;
-      } else if (!replayingCompletedBreakdown && items.length === 0 && config.waitForPieces && config.whenFinishedMoveTo) {
-        await db.transaction(async (tx) => {
-          await handleChildrenTerminal(tx, input.companyId, detail.case.id);
-        });
-        parent = await getCaseOrThrow(db, input.companyId, detail.case.id);
       }
 
       if (!replayingCompletedBreakdown) {
@@ -2977,6 +2996,14 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
             config,
           },
         });
+      }
+      if (!replayingCompletedBreakdown && items.length === 0 && config.waitForPieces && config.whenFinishedMoveTo) {
+        await db.transaction(async (tx) => {
+          await handleChildrenTerminal(tx, input.companyId, detail.case.id, undefined, {
+            allowExplicitZeroChildrenPass: true,
+          });
+        });
+        parent = await getCaseOrThrow(db, input.companyId, detail.case.id);
       }
 
       return {

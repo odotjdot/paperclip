@@ -124,6 +124,29 @@ breakdown_case() {
   api_json POST "/api/cases/$case_id/breakdown" "$(cat "$file")"
 }
 
+set_stage_automation() {
+  local pipeline_id="$1"
+  local stage_key="$2"
+  local agent_id="$3"
+  local instructions_body="$4"
+  local detail stage_id config body
+
+  detail="$(api_json GET "/api/pipelines/$pipeline_id")"
+  stage_id="$(jq -r --arg key "$stage_key" '.stages[] | select(.key == $key) | .id' <<<"$detail")"
+  if [[ -z "$stage_id" || "$stage_id" == "null" ]]; then
+    echo "Stage '$stage_key' not found on pipeline $pipeline_id." >&2
+    echo "$detail" | jq . >&2
+    exit 1
+  fi
+  config="$(jq -c --arg key "$stage_key" --arg agent "$agent_id" --arg instructions "$instructions_body" '
+    .stages[]
+    | select(.key == $key)
+    | (.config // {}) + { automation: { assigneeAgentId: $agent, instructionsBody: $instructions } }
+  ' <<<"$detail")"
+  body="$(jq -cn --argjson config "$config" '{config:$config}')"
+  api_json PATCH "/api/pipelines/$pipeline_id/stages/$stage_id" "$body" >/dev/null
+}
+
 STRAT_AGENT_ID="$(resolve_invokable_agent "c4fec7d0-26f6-4223-a148-36288402d47e" "STRAT")"
 WRITE_AGENT_ID="$(resolve_invokable_agent "726fa3f6-8644-47dc-96fa-e0a721c7d2bb" "WRITE")"
 PROD_AGENT_ID="$(resolve_invokable_agent "a8424431-16fd-4267-b4b9-484aa1810307" "PROD")"
@@ -171,6 +194,7 @@ jq -n --arg prod "$PROD_AGENT_ID" '[
 assets_pipeline="$(pc_json pipelines create --key "$ASSETS_PIPELINE" --name "Example Assets" --stages-file "$TMP_DIR/assets-stages.json")"
 assets_pipeline_id="$(jq -r '.id' <<<"$assets_pipeline")"
 require_json "$assets_pipeline" '.id and (.stages | length == 4)' "Assets pipeline creation failed."
+set_stage_automation "$assets_pipeline_id" "produce-asset" "$PROD_AGENT_ID" "Produce this asset to spec from the brief (image, card, diagram, or clip). Attach or link the output, then send it to review."
 
 jq -n --arg write "$WRITE_AGENT_ID" --arg assets "$assets_pipeline_id" '[
   {
@@ -239,6 +263,7 @@ jq -n --arg write "$WRITE_AGENT_ID" --arg assets "$assets_pipeline_id" '[
 content_pipeline="$(pc_json pipelines create --key "$CONTENT_PIPELINE" --name "Example Content" --stages-file "$TMP_DIR/content-stages.json")"
 content_pipeline_id="$(jq -r '.id' <<<"$content_pipeline")"
 require_json "$content_pipeline" '.id and (.stages | length == 6)' "Content pipeline creation failed."
+set_stage_automation "$content_pipeline_id" "intake-content" "$WRITE_AGENT_ID" "Draft this content piece from the brief; keep the draft in the case summary / work refs. Send it to review when the draft is solid."
 
 jq -n --arg strat "$STRAT_AGENT_ID" --arg content "$content_pipeline_id" '[
   {
@@ -306,6 +331,7 @@ jq -n --arg strat "$STRAT_AGENT_ID" --arg content "$content_pipeline_id" '[
 features_pipeline="$(pc_json pipelines create --key "$FEATURES_PIPELINE" --name "Example Features" --stages-file "$TMP_DIR/features-stages.json")"
 features_pipeline_id="$(jq -r '.id' <<<"$features_pipeline")"
 require_json "$features_pipeline" '.id and (.stages | length == 6)' "Features pipeline creation failed."
+set_stage_automation "$features_pipeline_id" "intake-feature" "$STRAT_AGENT_ID" "Draft a short coverage brief: audience, the angle, and which content types fit (blog post, documentation, tweetstorm). Send it to review when ready."
 
 jq -n --arg strat "$STRAT_AGENT_ID" --arg features "$features_pipeline_id" '[
   {
