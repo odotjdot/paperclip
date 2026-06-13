@@ -107,6 +107,7 @@ import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySel
 import { IssueThreadInteractionCardClassic } from "./IssueThreadInteractionCardClassic";
 import { AgentIcon } from "./AgentIconPicker";
 import { restoreSubmittedCommentDraft } from "../lib/comment-submit-draft";
+import { resolveMentionedAgentAssigneeValue } from "../lib/interrupt-handoff";
 import {
   captureComposerViewportSnapshot,
   restoreComposerViewportSnapshot,
@@ -3311,6 +3312,10 @@ const IssueChatComposer = forwardRef<IssueChatComposerHandle, IssueChatComposerP
   const composerContainerRef = useRef<HTMLDivElement | null>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canAcceptFiles = Boolean(onImageUpload || onAttachImage);
+  const reassignOptionIds = useMemo(
+    () => new Set(reassignOptions.map((option) => option.id)),
+    [reassignOptions],
+  );
 
   function queueViewportRestore(snapshot: ReturnType<typeof captureComposerViewportSnapshot>) {
     if (!snapshot) return;
@@ -3351,6 +3356,16 @@ const IssueChatComposer = forwardRef<IssueChatComposerHandle, IssueChatComposerP
   useEffect(() => {
     setReassignTarget(effectiveSuggestedAssigneeValue);
   }, [effectiveSuggestedAssigneeValue]);
+
+  const firstMentionedAssigneeValue = useMemo(
+    () => resolveMentionedAgentAssigneeValue(body, reassignOptionIds),
+    [body, reassignOptionIds],
+  );
+
+  useEffect(() => {
+    if (!enableReassign || !firstMentionedAssigneeValue) return;
+    setReassignTarget(firstMentionedAssigneeValue);
+  }, [enableReassign, firstMentionedAssigneeValue]);
 
   useEffect(() => {
     setUnassignedConfirmed(false);
