@@ -23,6 +23,7 @@ const mockIssuesApi = vi.hoisted(() => ({
   listFeedbackVotes: vi.fn(),
 }));
 const mockDialogState = vi.hoisted(() => ({ onboardingOpen: false }));
+const mockChatComposerProps = vi.hoisted(() => [] as Array<Record<string, unknown>>);
 
 vi.mock("../api/agents", () => ({ agentsApi: mockAgentsApi }));
 vi.mock("../api/goals", () => ({ goalsApi: mockGoalsApi }));
@@ -51,7 +52,8 @@ vi.mock("../components/MarkdownBody", () => ({
   MarkdownBody: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("../components/ChatComposer", () => ({
-  ChatComposer: forwardRef((_props, ref) => {
+  ChatComposer: forwardRef((props: Record<string, unknown>, ref) => {
+    mockChatComposerProps.push(props);
     useImperativeHandle(ref, () => ({ focus: vi.fn() }));
     return <div data-testid="chat-composer" />;
   }),
@@ -128,6 +130,7 @@ describe("BoardChat staged typing intro", () => {
     mockIssuesApi.list.mockResolvedValue([BOARD_ISSUE]);
     mockIssuesApi.listComments.mockResolvedValue([]);
     mockIssuesApi.listFeedbackVotes.mockResolvedValue([]);
+    mockChatComposerProps.length = 0;
   });
 
   afterEach(async () => {
@@ -294,5 +297,11 @@ describe("BoardChat staged typing intro", () => {
     expect(feedButton?.className).toContain(
       "bottom-[calc(5rem_+_env(safe-area-inset-bottom))]",
     );
+  });
+
+  it("configures the Conference Room composer to submit on Cmd/Ctrl+Enter", async () => {
+    await render();
+
+    expect(mockChatComposerProps.at(-1)?.submitKey).toBe("mod-enter");
   });
 });

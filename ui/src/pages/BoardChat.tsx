@@ -563,6 +563,7 @@ export function BoardChat() {
         const res = await fetch("/api/board/chat/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({
             companyId: selectedCompanyId,
             message: trimmed,
@@ -573,7 +574,11 @@ export function BoardChat() {
         clearTimeout(fetchTimeout);
 
         if (!res.ok || !res.body) {
-          throw new Error("Board chat stream not available");
+          const errorBody = await res.json().catch(() => null);
+          const message =
+            (errorBody as { error?: string } | null)?.error ||
+            "Board chat stream not available";
+          throw new Error(message);
         }
 
         setStatusText("Thinking...");
@@ -634,7 +639,9 @@ export function BoardChat() {
         console.error("Board chat error:", err);
         setStatusText("");
         setErrorText(
-          "The board assistant is unavailable right now. Please try again in a moment.",
+          err instanceof Error
+            ? err.message
+            : "The board assistant is unavailable right now. Please try again in a moment.",
         );
       } finally {
         setSending(false);
@@ -953,9 +960,8 @@ export function BoardChat() {
           {/* Input — shared ChatComposer (PAP-95a), adopted bare: textarea + send.
                No mode chip (the room has no task lifecycle). Multiline like task
                comments (PAP-116): text soft-wraps and the box auto-grows instead of
-               clipping / showing a horizontal scrollbar. Sends on plain Enter today
-               (Shift+Enter for a newline); flipping to ⌘/Ctrl+Enter is pending board
-               confirmation.
+               clipping / showing a horizontal scrollbar. Sends on ⌘/Ctrl+Enter;
+               plain Enter inserts a newline.
 
                PAP-131 (PAP-128 A): the dock floats over the message stream so text
                scrolls behind the translucent glass box. The old hard black gradient
@@ -972,7 +978,7 @@ export function BoardChat() {
               onChange={setInput}
               onSubmit={handleSend}
               placeholder="Ask anything about your company..."
-              submitKey="enter"
+              submitKey="mod-enter"
               surface="translucent"
               submitting={sending}
               disabled={sending}
