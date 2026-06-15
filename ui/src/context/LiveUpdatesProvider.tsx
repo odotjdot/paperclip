@@ -415,6 +415,13 @@ const ISSUE_DOCUMENT_ACTIVITY_ACTIONS = new Set([
   "issue.document_restored",
   "issue.document_deleted",
 ]);
+const ISSUE_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS = new Set([
+  "issue.document_annotation_thread_created",
+  "issue.document_annotation_comment_added",
+  "issue.document_annotation_thread_resolved",
+  "issue.document_annotation_thread_reopened",
+  "issue.document_annotation_remapped",
+]);
 const AGENT_TOAST_STATUSES = new Set(["error"]);
 const RUN_TOAST_STATUSES = new Set(["failed", "timed_out", "cancelled"]);
 
@@ -709,6 +716,18 @@ function invalidateActivityQueries(
             queryClient.invalidateQueries({ queryKey: ["issues", "document", ref], ...invalidationOptions });
             queryClient.invalidateQueries({ queryKey: ["issues", "document-revisions", ref], ...invalidationOptions });
           }
+        }
+        if (
+          action &&
+          (ISSUE_DOCUMENT_ACTIVITY_ACTIONS.has(action) || ISSUE_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS.has(action))
+        ) {
+          const documentKey = readString(details?.key) ?? readString(details?.documentKey);
+          queryClient.invalidateQueries({
+            queryKey: documentKey
+              ? ["issues", "document-annotations", ref, documentKey]
+              : ["issues", "document-annotations", ref],
+            ...invalidationOptions,
+          });
         }
         if (action?.startsWith("issue.thread_interaction_")) {
           queryClient.invalidateQueries({ queryKey: queryKeys.issues.interactions(ref), ...invalidationOptions });
