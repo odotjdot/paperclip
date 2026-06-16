@@ -236,6 +236,41 @@ describe("LiveUpdatesProvider issue invalidation", () => {
     });
   });
 
+  it("refreshes routine description annotation caches when routine annotation activity arrives", () => {
+    const invalidations: unknown[] = [];
+    const queryClient = {
+      invalidateQueries: (input: unknown) => {
+        invalidations.push(input);
+      },
+      getQueryData: () => undefined,
+    };
+
+    __liveUpdatesTestUtils.invalidateActivityQueries(
+      queryClient as never,
+      "company-1",
+      {
+        entityType: "routine",
+        entityId: "routine-1",
+        action: "routine.document_annotation_comment_added",
+        actorType: "user",
+        actorId: "user-2",
+        details: {
+          documentKey: "description",
+          threadId: "thread-1",
+          commentId: "comment-1",
+        },
+      },
+      { userId: "user-1", agentId: null },
+    );
+
+    expect(invalidations).toContainEqual({
+      queryKey: ["routines"],
+    });
+    expect(invalidations).toContainEqual({
+      queryKey: ["routines", "document-annotations", "routine-1", "description"],
+    });
+  });
+
   it("keeps self-authored comment events from refetching the active issue tree", () => {
     const invalidations: unknown[] = [];
     const queryClient = {

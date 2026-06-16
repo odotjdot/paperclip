@@ -23,7 +23,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn, relativeTime } from "@/lib/utils";
-import { documentAnnotationsApi } from "@/api/document-annotations";
+import { documentAnnotationsApi, type DocumentAnnotationTarget } from "@/api/document-annotations";
 import { authApi } from "@/api/auth";
 import { queryKeys } from "@/lib/queryKeys";
 import { AgentIcon } from "./AgentIconPicker";
@@ -36,7 +36,8 @@ import type { CompanyUserProfile } from "@/lib/company-members";
 export interface AnnotationPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  issueId: string;
+  target?: DocumentAnnotationTarget;
+  issueId?: string;
   documentKey: string;
   documentRevisionNumber: number;
   baseRevisionId: string | null;
@@ -106,6 +107,11 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const bodyTestId = props.isMobile ? "document-annotation-panel" : undefined;
+  const annotationTarget = useMemo<DocumentAnnotationTarget>(() => {
+    if (props.target) return props.target;
+    if (!props.issueId) throw new Error("Document annotation panel requires an annotation target.");
+    return { kind: "issue", issueId: props.issueId, documentKey: props.documentKey };
+  }, [props.documentKey, props.issueId, props.target]);
 
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
@@ -137,26 +143,35 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
   );
 
   const annotationsQueryKey = useMemo(
-    () => queryKeys.issues.documentAnnotations(props.issueId, props.documentKey, "all"),
-    [props.documentKey, props.issueId],
+    () => annotationTarget.kind === "routine"
+      ? queryKeys.routines.documentAnnotations(annotationTarget.routineId, annotationTarget.documentKey, "all")
+      : queryKeys.issues.documentAnnotations(annotationTarget.issueId, annotationTarget.documentKey, "all"),
+    [annotationTarget],
   );
 
   const invalidateAll = useCallback(() => {
     queryClient.invalidateQueries({
-      predicate: (query) =>
-        Array.isArray(query.queryKey)
-        && query.queryKey[0] === "issues"
-        && query.queryKey[1] === "document-annotations"
-        && query.queryKey[2] === props.issueId
-        && query.queryKey[3] === props.documentKey,
+      predicate: (query) => {
+        if (!Array.isArray(query.queryKey)) return false;
+        if (annotationTarget.kind === "routine") {
+          return query.queryKey[0] === "routines"
+            && query.queryKey[1] === "document-annotations"
+            && query.queryKey[2] === annotationTarget.routineId
+            && query.queryKey[3] === annotationTarget.documentKey;
+        }
+        return query.queryKey[0] === "issues"
+          && query.queryKey[1] === "document-annotations"
+          && query.queryKey[2] === annotationTarget.issueId
+          && query.queryKey[3] === annotationTarget.documentKey;
+      },
     });
-  }, [props.documentKey, props.issueId, queryClient]);
+  }, [annotationTarget, queryClient]);
 
   const createThread = useMutation({
     mutationFn: async (body: string) => {
       if (!props.pendingAnchor) throw new Error("No selection to anchor to.");
       if (!props.baseRevisionId) throw new Error("Document has no revision yet.");
-      return documentAnnotationsApi.create(props.issueId, props.documentKey, {
+      return documentAnnotationsApi.createForTarget(annotationTarget, {
         baseRevisionId: props.baseRevisionId,
         baseRevisionNumber: props.baseRevisionNumber,
         selector: props.pendingAnchor.selector,
@@ -172,8 +187,8 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
       const optimisticThread = buildOptimisticThread({
         body,
         selectedText: anchor.selectedText,
-        issueId: props.issueId,
-        documentKey: props.documentKey,
+        target: annotationTarget,
+        documentKey: annotationTarget.documentKey,
         baseRevisionId: props.baseRevisionId,
         baseRevisionNumber: props.baseRevisionNumber,
         normalizedStart: anchor.selector.position.normalizedStart,
@@ -210,7 +225,7 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
 
   const addReply = useMutation({
     mutationFn: ({ threadId, body }: { threadId: string; body: string }) =>
-      documentAnnotationsApi.addComment(props.issueId, props.documentKey, threadId, { body }),
+      documentAnnotationsApi.addCommentForTarget(annotationTarget, threadId, { body }),
     // Optimistically append the reply so it stays on screen through the round-trip.
     onMutate: async ({ threadId, body }) => {
       await queryClient.cancelQueries({ queryKey: annotationsQueryKey });
@@ -218,7 +233,7 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
       const optimisticComment = buildOptimisticComment({
         body,
         threadId,
-        issueId: props.issueId,
+        target: annotationTarget,
         author: currentUser,
       });
       queryClient.setQueryData<DocumentAnnotationThreadWithComments[]>(
@@ -242,7 +257,7 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
 
   const updateStatus = useMutation({
     mutationFn: ({ threadId, status }: { threadId: string; status: DocumentAnnotationThreadStatus }) =>
-      documentAnnotationsApi.updateStatus(props.issueId, props.documentKey, threadId, status),
+      documentAnnotationsApi.updateStatusForTarget(annotationTarget, threadId, status),
     onMutate: async ({ threadId, status }) => {
       await queryClient.cancelQueries({ queryKey: annotationsQueryKey });
       const previous = queryClient.getQueryData<DocumentAnnotationThreadWithComments[]>(annotationsQueryKey);
@@ -664,7 +679,7 @@ function optimisticId(prefix: string): string {
 function buildOptimisticComment(input: {
   body: string;
   threadId: string;
-  issueId: string;
+  target: DocumentAnnotationTarget;
   author: OptimisticAuthor;
 }): DocumentAnnotationComment {
   const now = new Date();
@@ -672,7 +687,8 @@ function buildOptimisticComment(input: {
     id: optimisticId("optimistic-comment"),
     companyId: "",
     threadId: input.threadId,
-    issueId: input.issueId,
+    issueId: input.target.kind === "issue" ? input.target.issueId : null,
+    routineId: input.target.kind === "routine" ? input.target.routineId : null,
     documentId: "",
     body: input.body,
     authorType: "user",
@@ -688,7 +704,7 @@ function buildOptimisticComment(input: {
 function buildOptimisticThread(input: {
   body: string;
   selectedText: string;
-  issueId: string;
+  target: DocumentAnnotationTarget;
   documentKey: string;
   baseRevisionId: string;
   baseRevisionNumber: number;
@@ -701,7 +717,7 @@ function buildOptimisticThread(input: {
   const comment = buildOptimisticComment({
     body: input.body,
     threadId: id,
-    issueId: input.issueId,
+    target: input.target,
     author: input.author,
   });
   // Only the fields the panel + overlay read need to be accurate; the optimistic
@@ -709,7 +725,8 @@ function buildOptimisticThread(input: {
   // don't have to fabricate every backend-only column.
   return {
     id,
-    issueId: input.issueId,
+    issueId: input.target.kind === "issue" ? input.target.issueId : null,
+    routineId: input.target.kind === "routine" ? input.target.routineId : null,
     documentKey: input.documentKey,
     status: "open",
     anchorState: "active",

@@ -422,6 +422,13 @@ const ISSUE_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS = new Set([
   "issue.document_annotation_thread_reopened",
   "issue.document_annotation_remapped",
 ]);
+const ROUTINE_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS = new Set([
+  "routine.document_annotation_thread_created",
+  "routine.document_annotation_comment_added",
+  "routine.document_annotation_thread_resolved",
+  "routine.document_annotation_thread_reopened",
+  "routine.document_annotation_remapped",
+]);
 const AGENT_TOAST_STATUSES = new Set(["error"]);
 const RUN_TOAST_STATUSES = new Set(["failed", "timed_out", "cancelled"]);
 
@@ -780,6 +787,12 @@ function invalidateActivityQueries(
 
   if (entityType === "routine" || entityType === "routine_trigger" || entityType === "routine_run") {
     queryClient.invalidateQueries({ queryKey: ["routines"] });
+    if (entityType === "routine" && action && ROUTINE_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS.has(action) && entityId) {
+      const documentKey = readString(details?.key) ?? readString(details?.documentKey) ?? "description";
+      queryClient.invalidateQueries({
+        queryKey: ["routines", "document-annotations", entityId, documentKey],
+      });
+    }
     return;
   }
 

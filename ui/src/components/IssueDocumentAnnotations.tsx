@@ -4,7 +4,7 @@ import type { Agent, DocumentAnnotationThreadWithComments, IssueDocument } from 
 import { MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { documentAnnotationsApi } from "@/api/document-annotations";
+import { documentAnnotationsApi, type DocumentAnnotationTarget } from "@/api/document-annotations";
 import { queryKeys } from "@/lib/queryKeys";
 import { parseDocumentAnnotationHash } from "@/lib/document-annotation-hash";
 import { DocumentAnnotationLayer, type PendingAnchor } from "./DocumentAnnotationLayer";
@@ -16,9 +16,12 @@ const DESKTOP_ANNOTATION_PANEL_MIN_WIDTH = 280;
 const DESKTOP_ANNOTATION_PANEL_GAP = 24;
 const DESKTOP_ANNOTATION_PANEL_VIEWPORT_MARGIN = 16;
 
+type AnnotationDocument = Pick<IssueDocument, "key" | "latestRevisionId" | "latestRevisionNumber">;
+
 export interface IssueDocumentAnnotationsProps {
   issueId: string;
-  doc: IssueDocument;
+  doc: AnnotationDocument;
+  target?: DocumentAnnotationTarget;
   /** The body that is being rendered/edited (current or historical revision). */
   bodyMarkdown: string;
   /** True when a draft has unsaved changes or is currently saving. */
@@ -43,6 +46,7 @@ export interface IssueDocumentAnnotationsProps {
 export function IssueDocumentAnnotations({
   issueId,
   doc,
+  target,
   bodyMarkdown,
   draftDirty,
   draftConflicted,
@@ -152,8 +156,12 @@ export function IssueDocumentAnnotations({
   }, [doc.key, isMobile, panelOpen]);
 
   const annotationsQuery = useQuery({
-    queryKey: queryKeys.issues.documentAnnotations(issueId, doc.key, "all"),
-    queryFn: () => documentAnnotationsApi.list(issueId, doc.key, { status: "all", includeComments: true }),
+    queryKey: target?.kind === "routine"
+      ? queryKeys.routines.documentAnnotations(target.routineId, target.documentKey, "all")
+      : queryKeys.issues.documentAnnotations(issueId, doc.key, "all"),
+    queryFn: () => target
+      ? documentAnnotationsApi.listForTarget(target, { status: "all", includeComments: true })
+      : documentAnnotationsApi.list(issueId, doc.key, { status: "all", includeComments: true }),
     staleTime: 30_000,
   });
   const allThreads = annotationsQuery.data ?? [];
@@ -284,6 +292,7 @@ export function IssueDocumentAnnotations({
         }
       }}
       issueId={issueId}
+      target={target}
       documentKey={doc.key}
       documentRevisionNumber={doc.latestRevisionNumber}
       baseRevisionId={doc.latestRevisionId}
@@ -359,6 +368,7 @@ export function IssueDocumentAnnotations({
 export interface DocumentAnnotationsCountChipProps {
   issueId: string;
   docKey: string;
+  target?: DocumentAnnotationTarget;
   panelOpen: boolean;
   onToggle: () => void;
 }
@@ -370,12 +380,17 @@ export interface DocumentAnnotationsCountChipProps {
 export function DocumentAnnotationsCountChip({
   issueId,
   docKey,
+  target,
   panelOpen,
   onToggle,
 }: DocumentAnnotationsCountChipProps) {
   const annotationsQuery = useQuery({
-    queryKey: queryKeys.issues.documentAnnotations(issueId, docKey, "all"),
-    queryFn: () => documentAnnotationsApi.list(issueId, docKey, { status: "all", includeComments: true }),
+    queryKey: target?.kind === "routine"
+      ? queryKeys.routines.documentAnnotations(target.routineId, target.documentKey, "all")
+      : queryKeys.issues.documentAnnotations(issueId, docKey, "all"),
+    queryFn: () => target
+      ? documentAnnotationsApi.listForTarget(target, { status: "all", includeComments: true })
+      : documentAnnotationsApi.list(issueId, docKey, { status: "all", includeComments: true }),
     staleTime: 30_000,
   });
   const threads = annotationsQuery.data ?? [];
