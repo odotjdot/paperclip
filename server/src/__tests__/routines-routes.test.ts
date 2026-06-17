@@ -465,6 +465,6 @@ describe("routine routes", () => {
       userId: "board-user",
       runId: null,
     });
-    expect(mockTrackRoutineCreated).toHaveBeenCalledWith(expect.anything());
+    expect(mockTrackRoutineCreated).toHaveBeenCalledWith();
   });
 });

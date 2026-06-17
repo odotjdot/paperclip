@@ -71,7 +71,7 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import { logger } from "../middleware/logger.js";
-import { getTelemetryClient } from "../telemetry.js";
+import { telemetry } from "../telemetry.js";
 import { accessService } from "./access.js";
 import { authorizationService, type AuthorizationActor } from "./authorization.js";
 import { sanitizeRecord } from "../redaction.js";
@@ -1292,9 +1292,7 @@ export function buildHostServices(
             'Plugin telemetry event names must be lowercase slugs using letters, numbers, "_" or "-".',
           );
         }
-        const telemetryClient = getTelemetryClient();
-        if (!telemetryClient) return;
-        telemetryClient.track(`plugin.${pluginKey}.${eventName}`, params.dimensions);
+        telemetry.track(`plugin.${pluginKey}.${eventName}`, params.dimensions);
       },
     },
 

@@ -51,6 +51,7 @@ vi.mock("../home-paths.js", () => ({
 describe("logger translateTime respects TZ environment variable", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.resetModules();
   });
 
   it("configures pino-pretty with SYS:HH:MM:ss so timestamps honour the TZ env var", async () => {
@@ -58,11 +59,32 @@ describe("logger translateTime respects TZ environment variable", () => {
 
     expect(mockTransport).toHaveBeenCalledOnce();
     const { targets } = mockTransport.mock.calls[0][0] as {
-      targets: Array<{ options: Record<string, unknown> }>;
+      targets: Array<{ target: string; options: Record<string, unknown> }>;
     };
-    for (const target of targets) {
-      expect(target.options.translateTime).toBe("SYS:HH:MM:ss");
-    }
+    const prettyTarget = targets.find((target) => target.target === "pino-pretty");
+    expect(prettyTarget?.options.translateTime).toBe("SYS:HH:MM:ss");
+  });
+
+  it("configures pino-roll with daily 50 MB rotation and seven-file retention", async () => {
+    await import("../middleware/logger.js");
+
+    expect(mockTransport).toHaveBeenCalledOnce();
+    const { targets } = mockTransport.mock.calls[0][0] as {
+      targets: Array<{ target: string; options: Record<string, unknown> }>;
+    };
+    const rollTarget = targets.find((target) => target.target === "pino-roll");
+    expect(rollTarget?.options).toMatchObject({
+      file: "/tmp/paperclip-test-logs/server",
+      extension: ".log",
+      frequency: "daily",
+      size: "50m",
+      mkdir: true,
+      symlink: true,
+      limit: {
+        count: 7,
+        removeOtherLogFiles: true,
+      },
+    });
   });
 
   it("SYS: prefix produces timezone-sensitive output: UTC epoch formats differently under UTC vs UTC+8", () => {

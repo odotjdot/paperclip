@@ -38,6 +38,10 @@ import {
   suggestTasksPayloadSchema,
   suggestTasksResultSchema,
 } from "@paperclipai/shared";
+import {
+  trackInteractionCreated,
+  trackInteractionResolved,
+} from "@paperclipai/shared/telemetry";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { issueService, listUnfinalizedExecutionWorkspaceIds } from "./issues.js";
 
@@ -84,6 +88,59 @@ type RequestConfirmationLikeInteraction =
 
 function isRequestConfirmationLikeKind(kind: string): kind is RequestConfirmationLikeKind {
   return (REQUEST_CONFIRMATION_INTERACTION_KINDS as readonly string[]).includes(kind);
+}
+
+function shouldTrackInteractionCreated(kind: string, actor: InteractionActor) {
+  return Boolean(actor.agentId) && (
+    kind === "ask_user_questions" ||
+    kind === "request_confirmation" ||
+    kind === "request_checkbox_confirmation"
+  );
+}
+
+function trackCreatedInteractionTelemetry(interaction: {
+  kind: string;
+  continuationPolicy: string;
+}, actor: InteractionActor) {
+  if (!shouldTrackInteractionCreated(interaction.kind, actor)) return;
+  trackInteractionCreated({
+    kind: interaction.kind,
+    continuationPolicy: interaction.continuationPolicy,
+  });
+}
+
+function resolveInteractionTelemetryOutcome(interaction: {
+  status: string;
+  result?: unknown;
+}): "accepted" | "rejected" | "expired" | "superseded" | "cancelled" | null {
+  if (interaction.status === "accepted" || interaction.status === "answered") return "accepted";
+  if (interaction.status === "rejected") return "rejected";
+  if (interaction.status === "cancelled") return "cancelled";
+  if (interaction.status === "expired") {
+    const result = interaction.result;
+    if (
+      result &&
+      typeof result === "object" &&
+      (result as Record<string, unknown>).outcome === "superseded_by_comment"
+    ) {
+      return "superseded";
+    }
+    return "expired";
+  }
+  return null;
+}
+
+function trackResolvedInteractionTelemetry(interaction: {
+  kind: string;
+  status: string;
+  result?: unknown;
+}) {
+  const outcome = resolveInteractionTelemetryOutcome(interaction);
+  if (!outcome) return;
+  trackInteractionResolved({
+    kind: interaction.kind,
+    outcome,
+  });
 }
 
 function isIssueThreadInteractionIdempotencyConflict(error: unknown): boolean {
@@ -518,7 +575,9 @@ async function expireStaleRequestConfirmationTarget(db: Db | any, args: {
     throw conflict("Interaction has already been resolved");
   }
   await touchIssue(db, args.row.issueId);
-  return hydrateInteraction(updated);
+  const expired = hydrateInteraction(updated);
+  trackResolvedInteractionTelemetry(expired);
+  return expired;
 }
 
 export function issueThreadInteractionService(db: Db) {
@@ -679,8 +738,10 @@ export function issueThreadInteractionService(db: Db) {
         await touchIssue(tx, args.issue.id);
       }
 
+      const acceptedInteraction = hydrateInteraction(updated);
+      trackResolvedInteractionTelemetry(acceptedInteraction);
       return {
-        interaction: hydrateInteraction(updated),
+        interaction: acceptedInteraction,
         continuationIssue,
       };
     });
@@ -731,7 +792,9 @@ export function issueThreadInteractionService(db: Db) {
       throw conflict("Interaction has already been resolved");
     }
     await touchIssue(db, args.issue.id);
-    return hydrateInteraction(updated);
+    const rejected = hydrateInteraction(updated);
+    trackResolvedInteractionTelemetry(rejected);
+    return rejected;
   }
 
   return {
@@ -852,7 +915,9 @@ export function issueThreadInteractionService(db: Db) {
       }
 
       await touchIssue(db, issue.id);
-      return hydrateInteraction(created);
+      const interaction = hydrateInteraction(created);
+      trackCreatedInteractionTelemetry(interaction, actor);
+      return interaction;
     },
 
     acceptInteraction: async (
@@ -1043,8 +1108,10 @@ export function issueThreadInteractionService(db: Db) {
         current.updatedAt = updated.updatedAt;
       });
 
+      const accepted = hydrateInteraction(current);
+      trackResolvedInteractionTelemetry(accepted);
       return {
-        interaction: hydrateInteraction(current),
+        interaction: accepted,
         createdIssues: createdWakeTargets,
       };
     },
@@ -1114,7 +1181,9 @@ export function issueThreadInteractionService(db: Db) {
       }
 
       await touchIssue(db, issue.id);
-      return hydrateInteraction(updated);
+      const rejected = hydrateInteraction(updated);
+      trackResolvedInteractionTelemetry(rejected);
+      return rejected;
     },
 
     expireRequestConfirmationsSupersededByComment: async (
@@ -1169,7 +1238,11 @@ export function issueThreadInteractionService(db: Db) {
             eq(issueThreadInteractions.status, "pending"),
           ))
           .returning();
-        if (updated) expired.push(hydrateInteraction(updated));
+        if (updated) {
+          const interaction = hydrateInteraction(updated);
+          trackResolvedInteractionTelemetry(interaction);
+          expired.push(interaction);
+        }
       }
 
       if (expired.length > 0) {
@@ -1254,7 +1327,9 @@ export function issueThreadInteractionService(db: Db) {
             eq(issueThreadInteractions.status, "pending"),
           ))
           .returning();
-        expired.push(...updatedRows.map(hydrateInteraction));
+        const interactions = updatedRows.map(hydrateInteraction);
+        interactions.forEach(trackResolvedInteractionTelemetry);
+        expired.push(...interactions);
       }
 
       if (expired.length > 0) {
@@ -1329,7 +1404,11 @@ export function issueThreadInteractionService(db: Db) {
             eq(issueThreadInteractions.status, "pending"),
           ))
           .returning();
-        if (updated) expired.push(hydrateInteraction(updated));
+        if (updated) {
+          const interaction = hydrateInteraction(updated);
+          trackResolvedInteractionTelemetry(interaction);
+          expired.push(interaction);
+        }
       }
 
       if (expired.length > 0) {
@@ -1392,7 +1471,9 @@ export function issueThreadInteractionService(db: Db) {
       }
 
       await touchIssue(db, issue.id);
-      return hydrateInteraction(updated);
+      const answered = hydrateInteraction(updated);
+      trackResolvedInteractionTelemetry(answered);
+      return answered;
     },
 
     cancelQuestions: async (
@@ -1447,7 +1528,9 @@ export function issueThreadInteractionService(db: Db) {
       }
 
       await touchIssue(db, issue.id);
-      return hydrateInteraction(updated);
+      const cancelled = hydrateInteraction(updated);
+      trackResolvedInteractionTelemetry(cancelled);
+      return cancelled;
     },
   };
 }

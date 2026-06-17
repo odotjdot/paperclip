@@ -49,7 +49,6 @@ import {
 import { trackRoutineRun } from "@paperclipai/shared/telemetry";
 import { conflict, forbidden, notFound, unauthorized, unprocessable } from "../errors.js";
 import { logger } from "../middleware/logger.js";
-import { getTelemetryClient } from "../telemetry.js";
 import { getConfiguredSecretProvider } from "../secrets/configured-provider.js";
 import { issueService } from "./issues.js";
 import { assertAssignableAgent } from "./agent-assignability.js";
@@ -1432,13 +1431,10 @@ export function routineService(
       }
     }
 
-    const telemetryClient = getTelemetryClient();
-    if (telemetryClient) {
-      trackRoutineRun(telemetryClient, {
-        source: run.source,
-        status: run.status,
-      });
-    }
+    trackRoutineRun({
+      source: run.source,
+      status: run.status,
+    });
 
     return run;
   }

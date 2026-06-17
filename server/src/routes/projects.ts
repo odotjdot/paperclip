@@ -29,7 +29,6 @@ import {
   collectProjectWorkspaceCommandPaths,
 } from "./workspace-command-authz.js";
 import { assertCanManageProjectWorkspaceRuntimeServices } from "./workspace-runtime-service-authz.js";
-import { getTelemetryClient } from "../telemetry.js";
 import { appendWithCap } from "../adapters/utils.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
 import { environmentService } from "../services/environments.js";
@@ -200,10 +199,7 @@ export function projectRoutes(db: Db) {
         envKeys: project.env ? Object.keys(project.env).sort() : [],
       },
     });
-    const telemetryClient = getTelemetryClient();
-    if (telemetryClient) {
-      trackProjectCreated(telemetryClient);
-    }
+    trackProjectCreated();
     res.status(201).json(hydratedProject ?? project);
   });
 

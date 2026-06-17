@@ -13,7 +13,6 @@ import { validate } from "../middleware/validate.js";
 import { accessService, logActivity, routineService } from "../services/index.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { forbidden, unauthorized } from "../errors.js";
-import { getTelemetryClient } from "../telemetry.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 
 export function routineRoutes(
@@ -114,10 +113,7 @@ export function routineRoutes(
       entityId: created.id,
       details: { title: created.title, assigneeAgentId: created.assigneeAgentId },
     });
-    const telemetryClient = getTelemetryClient();
-    if (telemetryClient) {
-      trackRoutineCreated(telemetryClient);
-    }
+    trackRoutineCreated();
     await logRoutineRevisionCreated(req, {
       companyId,
       routineId: created.id,

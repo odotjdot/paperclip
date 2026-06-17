@@ -4,9 +4,11 @@ import { PLUGIN_RPC_ERROR_CODES } from "../../../packages/plugins/sdk/src/protoc
 import { buildHostServices } from "../services/plugin-host-services.js";
 
 const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
+const mockTelemetry = vi.hoisted(() => ({ track: vi.fn() }));
 
 vi.mock("../telemetry.js", () => ({
   getTelemetryClient: mockGetTelemetryClient,
+  telemetry: mockTelemetry,
 }));
 
 function createEventBusStub() {
@@ -23,12 +25,10 @@ function createEventBusStub() {
 describe("plugin telemetry bridge", () => {
   beforeEach(() => {
     mockGetTelemetryClient.mockReset();
+    mockTelemetry.track.mockReset();
   });
 
   it("prefixes plugin telemetry events before forwarding them to the telemetry client", async () => {
-    const track = vi.fn();
-    mockGetTelemetryClient.mockReturnValue({ track });
-
     const services = buildHostServices(
       {} as never,
       "plugin-record-id",
@@ -46,15 +46,13 @@ describe("plugin telemetry bridge", () => {
       dimensions: { attempts: 2, success: true },
     });
 
-    expect(track).toHaveBeenCalledWith("plugin.linear.sync_completed", {
+    expect(mockTelemetry.track).toHaveBeenCalledWith("plugin.linear.sync_completed", {
       attempts: 2,
       success: true,
     });
   });
 
   it("rejects invalid bare telemetry event names before prefixing", async () => {
-    mockGetTelemetryClient.mockReturnValue({ track: vi.fn() });
-
     const services = buildHostServices(
       {} as never,
       "plugin-record-id",
@@ -88,7 +86,7 @@ describe("plugin telemetry bridge", () => {
       code: PLUGIN_RPC_ERROR_CODES.CAPABILITY_DENIED,
     });
 
-    expect(mockGetTelemetryClient).not.toHaveBeenCalled();
+    expect(mockTelemetry.track).not.toHaveBeenCalled();
   });
 
   it("passes telemetry requests through when the plugin declares the capability", async () => {
@@ -109,6 +107,8 @@ describe("plugin telemetry bridge", () => {
       dimensions: { source: "manual" },
     });
 
-    expect(mockGetTelemetryClient).toHaveBeenCalledTimes(1);
+    expect(mockTelemetry.track).toHaveBeenCalledWith("plugin.linear.sync_completed", {
+      source: "manual",
+    });
   });
 });

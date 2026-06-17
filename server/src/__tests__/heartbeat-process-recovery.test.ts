@@ -1903,7 +1903,6 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     await heartbeat.cancelRun(runId);
 
     expect(mockTrackAgentFirstHeartbeat).toHaveBeenCalledWith(
-      mockTelemetryClient,
       expect.objectContaining({
         agentRole: "engineer",
         agentId,

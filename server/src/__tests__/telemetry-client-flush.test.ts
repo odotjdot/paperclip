@@ -13,6 +13,12 @@ function makeClient(config?: Partial<TelemetryConfig>) {
   return new TelemetryClient(merged, () => state, "0.0.0-test");
 }
 
+function getLastRequestBody() {
+  const lastCall = vi.mocked(fetch).mock.calls.at(-1);
+  const requestInit = lastCall?.[1] as RequestInit | undefined;
+  return JSON.parse(String(requestInit?.body ?? "{}"));
+}
+
 describe("TelemetryClient periodic flush", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -63,6 +69,37 @@ describe("TelemetryClient periodic flush", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
 
     client.stop();
+  });
+
+  it("merges context dimensions into tracked events", async () => {
+    const client = makeClient();
+    client.setContext({ component: "server", work_mode: "standard" });
+
+    client.track("install.completed", { adapter_type: "codex_local" });
+    await client.flush();
+
+    const body = getLastRequestBody();
+    expect(body.events[0]?.dimensions).toEqual({
+      component: "server",
+      work_mode: "standard",
+      adapter_type: "codex_local",
+    });
+  });
+
+  it("lets later context and event dimensions override earlier context", async () => {
+    const client = makeClient();
+    client.setContext({ component: "server", work_mode: "standard" });
+    client.setContext({ work_mode: "review" });
+
+    client.track("routine.run", { work_mode: "manual", status: "done" });
+    await client.flush();
+
+    const body = getLastRequestBody();
+    expect(body.events[0]?.dimensions).toEqual({
+      component: "server",
+      work_mode: "manual",
+      status: "done",
+    });
   });
 
   it("stop() prevents further flushes", async () => {

@@ -155,7 +155,7 @@ describeEmbeddedPostgres("routine run telemetry", () => {
     const run = await svc.runRoutine(routine.id, { source: "manual" });
 
     expect(run.status).toBe("issue_created");
-    expect(mockTrackRoutineRun).toHaveBeenCalledWith(mockTelemetryClient, {
+    expect(mockTrackRoutineRun).toHaveBeenCalledWith({
       source: "manual",
       status: "issue_created",
     });

@@ -31,6 +31,14 @@ const mockEnvironmentService = vi.hoisted(() => ({
 const mockLogActivity = vi.hoisted(() => vi.fn());
 const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
 const mockTelemetryTrack = vi.hoisted(() => vi.fn());
+const mockTrackProjectCreated = vi.hoisted(() => vi.fn());
+const mockTrackGoalCreated = vi.hoisted(() => vi.fn());
+
+vi.mock("@paperclipai/shared/telemetry", () => ({
+  trackProjectCreated: mockTrackProjectCreated,
+  trackGoalCreated: mockTrackGoalCreated,
+  trackErrorHandlerCrash: vi.fn(),
+}));
 
 vi.mock("../telemetry.js", () => ({
   getTelemetryClient: mockGetTelemetryClient,
@@ -107,6 +115,7 @@ describe("project and goal telemetry routes", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.doUnmock("../telemetry.js");
+    vi.doUnmock("@paperclipai/shared/telemetry");
     vi.doUnmock("../services/index.js");
     vi.doUnmock("../services/workspace-runtime.js");
     vi.doUnmock("../routes/projects.js");
@@ -114,6 +123,11 @@ describe("project and goal telemetry routes", () => {
     vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
     registerModuleMocks();
+    vi.doMock("@paperclipai/shared/telemetry", () => ({
+      trackProjectCreated: mockTrackProjectCreated,
+      trackGoalCreated: mockTrackGoalCreated,
+      trackErrorHandlerCrash: vi.fn(),
+    }));
     vi.clearAllMocks();
     mockAccessService.decide.mockResolvedValue({
       allowed: true,
@@ -150,7 +164,7 @@ describe("project and goal telemetry routes", () => {
       .send({ name: "Telemetry project" });
 
     expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
-    expect(mockTelemetryTrack).toHaveBeenCalledWith("project.created");
+    expect(mockTrackProjectCreated).toHaveBeenCalledWith();
   });
 
   it("emits telemetry when a goal is created", async () => {
@@ -160,6 +174,6 @@ describe("project and goal telemetry routes", () => {
       .send({ title: "Telemetry goal", level: "team" });
 
     expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
-    expect(mockTelemetryTrack).toHaveBeenCalledWith("goal.created", { goal_level: "team" });
+    expect(mockTrackGoalCreated).toHaveBeenCalledWith({ goalLevel: "team" });
   });
 });

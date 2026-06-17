@@ -20,7 +20,7 @@ function resolveServerLogDir(): string {
 const logDir = resolveServerLogDir();
 fs.mkdirSync(logDir, { recursive: true });
 
-const logFile = path.join(logDir, "server.log");
+const logFileBase = path.join(logDir, "server");
 
 const sharedOpts = {
   translateTime: "SYS:HH:MM:ss",
@@ -39,8 +39,19 @@ export const logger = pino({
       level: "info",
     },
     {
-      target: "pino-pretty",
-      options: { ...sharedOpts, colorize: false, destination: logFile, mkdir: true },
+      target: "pino-roll",
+      options: {
+        file: logFileBase,
+        extension: ".log",
+        frequency: "daily",
+        size: "50m",
+        mkdir: true,
+        symlink: true,
+        limit: {
+          count: 7,
+          removeOtherLogFiles: true,
+        },
+      },
       level: "debug",
     },
   ],

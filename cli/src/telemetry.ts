@@ -6,6 +6,7 @@ import {
   trackInstallStarted,
   trackInstallCompleted,
   trackCompanyImported,
+  setTelemetryTracker,
 } from "../../packages/shared/src/telemetry/index.js";
 import { resolvePaperclipInstanceRoot } from "./config/home.js";
 import { readConfig } from "./config/store.js";
@@ -14,13 +15,20 @@ import { cliVersion } from "./version.js";
 let client: TelemetryClient | null = null;
 
 export function initTelemetry(fileConfig?: { enabled?: boolean }): TelemetryClient | null {
-  if (client) return client;
+  if (client) {
+    setTelemetryTracker(client);
+    return client;
+  }
 
   const config = resolveTelemetryConfig(fileConfig);
-  if (!config.enabled) return null;
+  if (!config.enabled) {
+    setTelemetryTracker(null);
+    return null;
+  }
 
   const stateDir = path.join(resolvePaperclipInstanceRoot(), "telemetry");
   client = new TelemetryClient(config, () => loadOrCreateState(stateDir, cliVersion), cliVersion);
+  setTelemetryTracker(client);
   return client;
 }
 

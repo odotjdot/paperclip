@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type {
   TelemetryConfig,
+  TelemetryDimensions,
   TelemetryEvent,
   TelemetryEventName,
   TelemetryState,
@@ -17,24 +18,37 @@ export class TelemetryClient {
   private queue: TelemetryEvent[] = [];
   private readonly config: TelemetryConfig;
   private readonly stateFactory: () => TelemetryState;
+  private readonly statePersister: ((state: TelemetryState) => void) | null;
   private readonly version: string;
   private state: TelemetryState | null = null;
   private flushInterval: ReturnType<typeof setInterval> | null = null;
+  private context: TelemetryDimensions = {};
 
-  constructor(config: TelemetryConfig, stateFactory: () => TelemetryState, version: string) {
+  constructor(
+    config: TelemetryConfig,
+    stateFactory: () => TelemetryState,
+    version: string,
+    statePersister?: (state: TelemetryState) => void,
+  ) {
     this.config = config;
     this.stateFactory = stateFactory;
     this.version = version;
+    this.statePersister = statePersister ?? null;
   }
 
-  track(eventName: TelemetryEventName, dimensions?: Record<string, string | number | boolean>): void {
+  setContext(dimensions: TelemetryDimensions): void {
+    this.context = { ...this.context, ...dimensions };
+  }
+
+  track(eventName: TelemetryEventName, dimensions?: TelemetryDimensions): void {
     if (!this.config.enabled) return;
-    this.getState(); // ensure state is initialised (side-effect: creates state file on first call)
+    const state = this.getState(); // ensure state is initialised (side-effect: creates state file on first call)
+    this.markEventSeen(state, eventName);
 
     this.queue.push({
       name: eventName,
       occurredAt: new Date().toISOString(),
-      dimensions: dimensions ?? {},
+      dimensions: { ...this.context, ...(dimensions ?? {}) },
     });
 
     if (this.queue.length >= BATCH_SIZE) {
@@ -105,11 +119,26 @@ export class TelemetryClient {
       .slice(0, 16);
   }
 
+  hasTrackedEventName(eventName: TelemetryEventName): boolean {
+    return this.getSeenEventNames().has(eventName);
+  }
+
   private getState(): TelemetryState {
     if (!this.state) {
       this.state = this.stateFactory();
     }
     return this.state;
+  }
+
+  private getSeenEventNames(): Set<string> {
+    return new Set(this.getState().seenEventNames ?? []);
+  }
+
+  private markEventSeen(state: TelemetryState, eventName: TelemetryEventName): void {
+    const seen = new Set(state.seenEventNames ?? []);
+    if (seen.has(eventName)) return;
+    state.seenEventNames = [...seen, eventName].sort();
+    this.statePersister?.(state);
   }
 
   private resolveEndpoints(): readonly string[] {

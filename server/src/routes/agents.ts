@@ -96,7 +96,6 @@ import {
   loadDefaultAgentInstructionsBundle,
   resolveDefaultAgentInstructionsBundleRole,
 } from "../services/default-agent-instructions.js";
-import { getTelemetryClient } from "../telemetry.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
 import { recoveryService } from "../services/recovery/service.js";
 import { resolveCoreTrustPreset } from "../services/trust-preset-resolver.js";
@@ -2284,10 +2283,7 @@ export function agentRoutes(
         desiredSkills: desiredSkillAssignment.desiredSkills,
       },
     });
-    const telemetryClient = getTelemetryClient();
-    if (telemetryClient) {
-      trackAgentCreated(telemetryClient, { agentRole: agent.role, agentId: agent.id });
-    }
+    trackAgentCreated({ agentRole: agent.role, agentId: agent.id });
 
     await applyDefaultAgentTaskAssignGrant(
       companyId,
@@ -2405,10 +2401,7 @@ export function agentRoutes(
         desiredSkills: desiredSkillAssignment.desiredSkills,
       },
     });
-    const telemetryClient = getTelemetryClient();
-    if (telemetryClient) {
-      trackAgentCreated(telemetryClient, { agentRole: agent.role, agentId: agent.id });
-    }
+    trackAgentCreated({ agentRole: agent.role, agentId: agent.id });
 
     await applyDefaultAgentTaskAssignGrant(
       companyId,

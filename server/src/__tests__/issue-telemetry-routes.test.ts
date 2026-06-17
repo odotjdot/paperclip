@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockIssueService = vi.hoisted(() => ({
+  getRelationSummaries: vi.fn(),
   getById: vi.fn(),
   getWakeableParentAfterChildCompletion: vi.fn(),
   listWakeableBlockedDependents: vi.fn(),
@@ -14,6 +15,12 @@ const mockAgentService = vi.hoisted(() => ({
 }));
 
 const mockTrackAgentTaskCompleted = vi.hoisted(() => vi.fn());
+const mockTrackProductFirstTaskCompleted = vi.hoisted(() => vi.fn());
+const mockTrackTaskBlocked = vi.hoisted(() => vi.fn());
+const mockTrackTaskCompleted = vi.hoisted(() => vi.fn());
+const mockTrackTaskCreated = vi.hoisted(() => vi.fn());
+const mockTrackTaskReopened = vi.hoisted(() => vi.fn());
+const mockTrackTaskStatusChanged = vi.hoisted(() => vi.fn());
 const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
 const mockDbSelectWhere = vi.hoisted(() => vi.fn(() => ({
   then: (onFulfilled: (rows: unknown[]) => unknown, onRejected?: (reason: unknown) => unknown) =>
@@ -29,6 +36,12 @@ function registerModuleMocks() {
   vi.doMock("@paperclipai/shared/telemetry", () => ({
     trackAgentTaskCompleted: mockTrackAgentTaskCompleted,
     trackErrorHandlerCrash: vi.fn(),
+    trackProductFirstTaskCompleted: mockTrackProductFirstTaskCompleted,
+    trackTaskBlocked: mockTrackTaskBlocked,
+    trackTaskCompleted: mockTrackTaskCompleted,
+    trackTaskCreated: mockTrackTaskCreated,
+    trackTaskReopened: mockTrackTaskReopened,
+    trackTaskStatusChanged: mockTrackTaskStatusChanged,
   }));
 
   vi.doMock("../telemetry.js", () => ({
@@ -93,11 +106,13 @@ function registerModuleMocks() {
   }));
 }
 
-function makeIssue(status: "todo" | "done") {
+function makeIssue(status: "todo" | "done" | "blocked" | "cancelled") {
   return {
     id: "11111111-1111-4111-8111-111111111111",
     companyId: "company-1",
     status,
+    workMode: "standard",
+    priority: "high",
     assigneeAgentId: "agent-1",
     assigneeUserId: null,
     createdByUserId: "local-board",
@@ -133,8 +148,15 @@ describe("issue telemetry routes", () => {
     vi.doUnmock("../middleware/index.js");
     registerModuleMocks();
     vi.clearAllMocks();
-    mockGetTelemetryClient.mockReturnValue({ track: vi.fn() });
+    mockGetTelemetryClient.mockReturnValue({
+      track: vi.fn(),
+      hasTrackedEventName: vi.fn(() => false),
+    });
     mockIssueService.getById.mockResolvedValue(makeIssue("todo"));
+    mockIssueService.getRelationSummaries.mockResolvedValue({
+      blockedBy: [{ id: "blocker-1" }, { id: "blocker-2" }],
+      blocks: [],
+    });
     mockIssueService.getWakeableParentAfterChildCompletion.mockResolvedValue(null);
     mockIssueService.listWakeableBlockedDependents.mockResolvedValue([]);
     mockIssueService.update.mockImplementation(async (_id: string, patch: Record<string, unknown>) => ({
@@ -170,13 +192,23 @@ describe("issue telemetry routes", () => {
 
     expect(res.status).toBe(200);
     await vi.waitFor(() => {
-      expect(mockTrackAgentTaskCompleted).toHaveBeenCalledWith(expect.anything(), {
+      expect(mockTrackAgentTaskCompleted).toHaveBeenCalledWith({
         agentRole: "engineer",
         agentId: "agent-1",
         adapterType: "codex_local",
         model: "claude-sonnet-4-6",
       });
     });
+    expect(mockTrackTaskStatusChanged).toHaveBeenCalledWith({
+      from: "todo",
+      to: "done",
+      workMode: "standard",
+    });
+    expect(mockTrackTaskCompleted).toHaveBeenCalledWith({
+      outcome: "done",
+      workMode: "standard",
+    });
+    expect(mockTrackProductFirstTaskCompleted).toHaveBeenCalledWith();
   }, 10_000);
 
   it("does not emit agent task-completed telemetry for board-driven completions", async () => {
@@ -194,5 +226,58 @@ describe("issue telemetry routes", () => {
     expect(res.status).toBe(200);
     expect(mockTrackAgentTaskCompleted).not.toHaveBeenCalled();
     expect(mockAgentService.getById).not.toHaveBeenCalled();
+    expect(mockTrackTaskCompleted).toHaveBeenCalledWith({
+      outcome: "done",
+      workMode: "standard",
+    });
+  });
+
+  it("emits task blocked telemetry with blocker count", async () => {
+    const app = await createApp({
+      type: "board",
+      userId: "local-board",
+      companyIds: ["company-1"],
+      source: "local_implicit",
+      isInstanceAdmin: false,
+    });
+
+    const res = await request(app)
+      .patch("/api/issues/11111111-1111-4111-8111-111111111111")
+      .send({ status: "blocked" });
+
+    expect(res.status).toBe(200);
+    expect(mockTrackTaskStatusChanged).toHaveBeenCalledWith({
+      from: "todo",
+      to: "blocked",
+      workMode: "standard",
+    });
+    expect(mockTrackTaskBlocked).toHaveBeenCalledWith({
+      hasBlockerCount: 2,
+    });
+  });
+
+  it("emits task reopened telemetry when a closed issue returns to todo", async () => {
+    mockIssueService.getById.mockResolvedValue(makeIssue("done"));
+    mockIssueService.update.mockImplementation(async (_id: string, patch: Record<string, unknown>) => ({
+      ...makeIssue("done"),
+      ...patch,
+    }));
+    const app = await createApp({
+      type: "board",
+      userId: "local-board",
+      companyIds: ["company-1"],
+      source: "local_implicit",
+      isInstanceAdmin: false,
+    });
+
+    const res = await request(app)
+      .patch("/api/issues/11111111-1111-4111-8111-111111111111")
+      .send({ status: "todo" });
+
+    expect(res.status).toBe(200);
+    expect(mockTrackTaskReopened).toHaveBeenCalledWith({
+      from: "done",
+      workMode: "standard",
+    });
   });
 });

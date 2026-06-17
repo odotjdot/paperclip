@@ -61,7 +61,15 @@ import {
   type SourceTrustMetadata,
   type SuccessfulRunHandoffState,
 } from "@paperclipai/shared";
-import { trackAgentTaskCompleted } from "@paperclipai/shared/telemetry";
+import {
+  trackAgentTaskCompleted,
+  trackProductFirstTaskCompleted,
+  trackTaskBlocked,
+  trackTaskCompleted,
+  trackTaskCreated,
+  trackTaskReopened,
+  trackTaskStatusChanged,
+} from "@paperclipai/shared/telemetry";
 import { getTelemetryClient } from "../telemetry.js";
 import type { StorageService } from "../storage/types.js";
 import { validate } from "../middleware/validate.js";
@@ -287,6 +295,71 @@ const ISSUE_WORKSPACE_AUDIT_FIELDS = new Set([
 
 function readNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function resolveIssueWorkMode(issue: { workMode?: string | null }) {
+  return issue.workMode ?? "standard";
+}
+
+function issueHasAssignee(issue: { assigneeAgentId?: string | null; assigneeUserId?: string | null }) {
+  return Boolean(issue.assigneeAgentId || issue.assigneeUserId);
+}
+
+function trackCreatedTaskTelemetry(issue: {
+  workMode?: string | null;
+  priority: string;
+  assigneeAgentId?: string | null;
+  assigneeUserId?: string | null;
+}) {
+  trackTaskCreated({
+    workMode: resolveIssueWorkMode(issue),
+    priority: issue.priority,
+    hasAssignee: issueHasAssignee(issue),
+  });
+}
+
+function trackStatusTransitionTelemetry(input: {
+  from: string;
+  to: string;
+  workMode?: string | null;
+  blockerCount?: number | null;
+}) {
+  if (input.from === input.to) return;
+
+  const workMode = resolveIssueWorkMode(input);
+  trackTaskStatusChanged({
+    from: input.from,
+    to: input.to,
+    workMode,
+  });
+
+  if (input.to === "done" || input.to === "cancelled") {
+    const telemetryClient = getTelemetryClient();
+    const firstTaskCompleted =
+      telemetryClient && typeof telemetryClient.hasTrackedEventName === "function"
+        ? !telemetryClient.hasTrackedEventName("task.completed")
+        : false;
+    trackTaskCompleted({
+      outcome: input.to,
+      workMode,
+    });
+    if (firstTaskCompleted) {
+      trackProductFirstTaskCompleted();
+    }
+  }
+
+  if (input.to === "blocked") {
+    trackTaskBlocked({
+      hasBlockerCount: Math.max(0, input.blockerCount ?? 0),
+    });
+  }
+
+  if ((input.from === "done" || input.from === "cancelled") && input.to !== "done" && input.to !== "cancelled") {
+    trackTaskReopened({
+      from: input.from,
+      workMode,
+    });
+  }
 }
 
 function hasIssueWorkspaceAuditChange(previous: Record<string, unknown>) {
@@ -4387,6 +4460,7 @@ export function issueRoutes(
       createdByAgentId: actor.agentId,
       createdByUserId: actor.actorType === "user" ? actor.actorId : null,
     });
+    trackCreatedTaskTelemetry(issue);
     await issueReferencesSvc.syncIssue(issue.id);
     const referenceSummary = await issueReferencesSvc.listIssueReferenceSummary(issue.id);
     const referenceDiff = issueReferencesSvc.diffIssueReferenceSummary(
@@ -4509,6 +4583,7 @@ export function issueRoutes(
       actorAgentId: actor.agentId,
       actorUserId: actor.actorType === "user" ? actor.actorId : null,
     });
+    trackCreatedTaskTelemetry(issue);
 
     await logActivity(db, {
       companyId: parent.companyId,
@@ -5226,6 +5301,16 @@ export function issueRoutes(
         blocks: updatedRelations.blocks,
       };
     }
+    const statusTransitionBlockerCount =
+      existing.status !== issue.status && issue.status === "blocked"
+        ? (updatedRelations ?? await svc.getRelationSummaries(issue.id)).blockedBy.length
+        : null;
+    trackStatusTransitionTelemetry({
+      from: existing.status,
+      to: issue.status,
+      workMode: issue.workMode,
+      blockerCount: statusTransitionBlockerCount,
+    });
     await routinesSvc.syncRunStatusForIssue(issue.id);
 
     if (actor.runId) {
@@ -5481,12 +5566,11 @@ export function issueRoutes(
     }
 
     if (issue.status === "done" && existing.status !== "done") {
-      const tc = getTelemetryClient();
-      if (tc && actor.agentId) {
+      if (actor.agentId) {
         const actorAgent = await agentsSvc.getById(actor.agentId);
         if (actorAgent) {
           const model = typeof actorAgent.adapterConfig?.model === "string" ? actorAgent.adapterConfig.model : undefined;
-          trackAgentTaskCompleted(tc, {
+          trackAgentTaskCompleted({
             agentRole: actorAgent.role,
             agentId: actorAgent.id,
             adapterType: actorAgent.adapterType,
@@ -6923,6 +7007,20 @@ export function issueRoutes(
       commentReferenceSummaryBefore,
       commentReferenceSummaryAfter,
     );
+
+    if (issueBeforeCommentDecision && issueBeforeCommentDecision.status !== currentIssue.status) {
+      trackStatusTransitionTelemetry({
+        from: issueBeforeCommentDecision.status,
+        to: currentIssue.status,
+        workMode: currentIssue.workMode,
+      });
+    } else if ((reopened || scheduledRetrySupersededByComment) && reopenFromStatus && reopenFromStatus !== currentIssue.status) {
+      trackStatusTransitionTelemetry({
+        from: reopenFromStatus,
+        to: currentIssue.status,
+        workMode: currentIssue.workMode,
+      });
+    }
 
     if (actor.runId) {
       await heartbeat.reportRunActivity(actor.runId).catch((err) =>

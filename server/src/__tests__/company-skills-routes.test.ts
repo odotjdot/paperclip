@@ -458,7 +458,7 @@ describe("company skill mutation permissions", () => {
       .send({ source: "https://github.com/vercel-labs/agent-browser" });
 
     expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
-    expect(mockTrackSkillImported).toHaveBeenCalledWith(expect.anything(), {
+    expect(mockTrackSkillImported).toHaveBeenCalledWith({
       sourceType: "github",
       skillRef: "vercel-labs/agent-browser/find-skills",
     });
@@ -504,7 +504,7 @@ describe("company skill mutation permissions", () => {
       .send({ source: "https://ghe.example.com/acme/private-skill" });
 
     expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
-    expect(mockTrackSkillImported).toHaveBeenCalledWith(expect.anything(), {
+    expect(mockTrackSkillImported).toHaveBeenCalledWith({
       sourceType: "github",
       skillRef: null,
     });
@@ -546,7 +546,7 @@ describe("company skill mutation permissions", () => {
       .send({ source: "https://github.com/acme/private-skill" });
 
     expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
-    expect(mockTrackSkillImported).toHaveBeenCalledWith(expect.anything(), {
+    expect(mockTrackSkillImported).toHaveBeenCalledWith({
       sourceType: "github",
       skillRef: null,
     });
