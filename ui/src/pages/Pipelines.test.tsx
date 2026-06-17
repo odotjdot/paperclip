@@ -878,6 +878,7 @@ describe("PipelineItemDetailView", () => {
 
     const waitingSection = container.querySelector('section[aria-label="Waiting child items"]');
     expect(waitingSection).not.toBeNull();
+    expect(waitingSection?.className).toContain("px-4");
     expect(waitingSection?.className).not.toContain("bg-muted");
     expect(waitingSection?.textContent).toContain("Waiting on 2 of 2 child items");
     expect(waitingSection?.textContent).toContain("Live with CodexCoder");
