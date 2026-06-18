@@ -4,6 +4,7 @@ import {
   groupWarningsByStage,
   isPipelineTerminalStageKind,
   syncRoutineVariablesWithTemplate,
+  type RoutineEnvConfig,
   type RoutineVariable,
 } from "@paperclipai/shared";
 import {
@@ -33,10 +34,12 @@ import {
 } from "lucide-react";
 import { agentsApi } from "../api/agents";
 import { accessApi } from "../api/access";
+import { secretsApi } from "../api/secrets";
 import { ApiError } from "../api/client";
 import type { PipelineCompanyCaseEvent, PipelineDetail, PipelineStage, PipelineTransitionEdge } from "../api/pipelines";
 import { pipelinesApi } from "../api/pipelines";
 import { EmptyState } from "../components/EmptyState";
+import { StageSecretsPanel } from "../components/StageSecretsPanel";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { RoutineVariablesEditor, RoutineVariablesHint } from "../components/RoutineVariablesEditor";
@@ -95,6 +98,13 @@ type StageConfig = {
   automation?: {
     assigneeAgentId?: string | null;
     instructionsBody?: string | null;
+    // Derived (read-only) fields the server adds from the backing automation
+    // routine. They are never persisted into stage config — stage secrets live
+    // on `routines.env` and are saved through the automation-env route.
+    routineId?: string;
+    env?: RoutineEnvConfig | null;
+    latestRoutineRevisionId?: string | null;
+    latestRoutineRevisionNumber?: number;
   };
   requireApproval?: boolean;
   approver?: {
@@ -339,6 +349,27 @@ function stageAutomation(stage: PipelineStage | null | undefined) {
 
 function stageNewEntriesDisabled(stage: PipelineStage | null | undefined) {
   return stageConfig(stage).disabled === true;
+}
+
+/**
+ * Read the server-derived automation detail for the Secrets tab. The backing
+ * routine is the source of truth: `routineId` + `assigneeAgentId` tell us
+ * whether automation actually exists (so secrets can be bound), `env` is the
+ * current routine env, and `latestRoutineRevisionId` is used for optimistic
+ * concurrency when saving.
+ */
+function stageAutomationDetail(stage: PipelineStage | null | undefined) {
+  const automation = stageConfig(stage).automation;
+  if (!automation || typeof automation !== "object" || Array.isArray(automation)) {
+    return { routineId: "", assigneeAgentId: "", env: {} as RoutineEnvConfig, latestRoutineRevisionId: null as string | null };
+  }
+  return {
+    routineId: typeof automation.routineId === "string" ? automation.routineId : "",
+    assigneeAgentId: typeof automation.assigneeAgentId === "string" ? automation.assigneeAgentId : "",
+    env: (automation.env ?? {}) as RoutineEnvConfig,
+    latestRoutineRevisionId:
+      typeof automation.latestRoutineRevisionId === "string" ? automation.latestRoutineRevisionId : null,
+  };
 }
 
 /**
@@ -650,6 +681,9 @@ export function PipelineSettings() {
   const [selectedApproval, setSelectedApproval] = useState("any_human");
   const [instructionsBody, setInstructionsBody] = useState("");
   const [instructionsVariables, setInstructionsVariables] = useState<RoutineVariable[]>([]);
+  // Stage secrets (the automation routine's env). Edited independently of the
+  // rest of the stage form and saved through the narrow automation-env route.
+  const [stageEnv, setStageEnv] = useState<RoutineEnvConfig>({});
   const [approveTarget, setApproveTarget] = useState("");
   const [rejectTarget, setRejectTarget] = useState("");
   const [requestChangesTarget, setRequestChangesTarget] = useState("");
@@ -694,6 +728,25 @@ export function PipelineSettings() {
     queryKey: selectedCompanyId ? queryKeys.access.companyUserDirectory(selectedCompanyId) : ["access", "users", "none"],
     queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
     enabled: !!selectedCompanyId,
+  });
+
+  // Company secrets back the Secrets tab — the same inventory used by routines,
+  // agents, and projects. We never create a stage-only secret namespace.
+  const secretsQuery = useQuery({
+    queryKey: selectedCompanyId ? queryKeys.secrets.list(selectedCompanyId) : ["secrets", "none"],
+    queryFn: () => secretsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const createSecret = useMutation({
+    mutationFn: (input: { name: string; value: string }) => {
+      if (!selectedCompanyId) throw new Error("Select a company to create secrets");
+      return secretsApi.create(selectedCompanyId, input);
+    },
+    onSuccess: () => {
+      if (!selectedCompanyId) return;
+      queryClient.invalidateQueries({ queryKey: queryKeys.secrets.list(selectedCompanyId) });
+    },
   });
 
   // Other pipelines in the workspace power the "Break into pieces" target
@@ -886,6 +939,15 @@ export function PipelineSettings() {
     setInstructionsVariables(savedInstructionsVariables);
   }, [selectedStage?.id, savedInstructionsBody, savedInstructionsVariables]);
 
+  // Stage secrets hydrate from the backing routine's derived env. Re-running on
+  // the serialized saved env clears the dirty state after a save/refetch.
+  const savedStageEnv = stageAutomationDetail(selectedStage).env;
+  const savedStageEnvKey = JSON.stringify(savedStageEnv ?? {});
+  useEffect(() => {
+    setStageEnv((savedStageEnv ?? {}) as RoutineEnvConfig);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStage?.id, savedStageEnvKey]);
+
   useEffect(() => {
     setDeleteStageDialogOpen(false);
     setDeleteMoveTargetStageId(stages.find((stage) => stage.id !== selectedStage?.id)?.id ?? "");
@@ -1023,6 +1085,39 @@ export function PipelineSettings() {
       pushToast({
         title: "Failed to save stage",
         body: error instanceof Error ? error.message : "Paperclip could not save the stage.",
+        tone: "error",
+      });
+    },
+  });
+
+  // Secrets save through the narrow automation-env route so it only touches the
+  // routine's env (and secret bindings) — never the rest of the stage config.
+  const saveStageEnv = useMutation({
+    mutationFn: async () => {
+      if (!pipelineId || !selectedStage) return null;
+      const detail = stageAutomationDetail(selectedStage);
+      const env = Object.keys(stageEnv).length > 0 ? stageEnv : null;
+      await pipelinesApi.updateStageAutomationEnv(pipelineId, selectedStage.id, {
+        env,
+        baseRoutineRevisionId: detail.latestRoutineRevisionId,
+      });
+      return null;
+    },
+    onSuccess: async () => {
+      await refreshPipeline();
+      if (selectedCompanyId) {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.secrets.list(selectedCompanyId) });
+      }
+      pushToast({ title: "Stage secrets saved", tone: "success" });
+    },
+    onError: async (error) => {
+      pushToast({
+        title: "Failed to save secrets",
+        body: error instanceof ApiError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : "Paperclip could not save the stage secrets.",
         tone: "error",
       });
     },
@@ -1213,6 +1308,7 @@ export function PipelineSettings() {
     selectedStage != null &&
     JSON.stringify(instructionsVariables) !== JSON.stringify(savedInstructionsVariables);
   const selectedAutomationAgent = stageAssigneeAgentId ? agentById.get(stageAssigneeAgentId) ?? null : null;
+  const stageEnvDirty = selectedStage != null && JSON.stringify(stageEnv) !== savedStageEnvKey;
   const stageDirty =
     (savedStageForm != null &&
       currentStageForm != null &&
@@ -2010,7 +2106,28 @@ export function PipelineSettings() {
 
                   {activeStageSection === "secrets" ? (
                     <div className="w-full max-w-3xl">
-                      <EmptyState icon={KeyRound} message="No stage secrets configured." />
+                      {(() => {
+                        const detail = stageAutomationDetail(selectedStage);
+                        const automationAgent = detail.assigneeAgentId
+                          ? agentById.get(detail.assigneeAgentId) ?? null
+                          : null;
+                        return (
+                          <StageSecretsPanel
+                            hasAutomation={Boolean(detail.routineId && detail.assigneeAgentId)}
+                            agentName={automationAgent?.name ?? null}
+                            agentIcon={automationAgent?.icon ?? null}
+                            secrets={secretsQuery.data ?? []}
+                            secretsLoading={secretsQuery.isLoading}
+                            value={stageEnv}
+                            onChange={setStageEnv}
+                            onCreateSecret={async (name, value) => createSecret.mutateAsync({ name, value })}
+                            onSetupAutomation={() => setActiveStageSection("instructions")}
+                            onSave={() => saveStageEnv.mutate()}
+                            saving={saveStageEnv.isPending}
+                            dirty={stageEnvDirty}
+                          />
+                        );
+                      })()}
                     </div>
                   ) : null}
 

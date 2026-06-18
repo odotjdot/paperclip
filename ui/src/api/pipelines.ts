@@ -1,4 +1,4 @@
-import type { Issue, PipelineCaseConversationSource, PipelineCaseLiveness, PipelineHealthReport } from "@paperclipai/shared";
+import type { Issue, PipelineCaseConversationSource, PipelineCaseLiveness, PipelineHealthReport, RoutineEnvConfig } from "@paperclipai/shared";
 import { api } from "./client";
 
 export type { PipelineHealthReport, PipelineHealthWarning } from "@paperclipai/shared";
@@ -425,6 +425,14 @@ export const pipelinesApi = {
     stageId: string,
     data: { key?: string; name?: string; kind?: string; position?: number; config?: Record<string, unknown> },
   ) => api.patch<PipelineStage>(`/pipelines/${pipelineId}/stages/${stageId}`, data),
+  // Stage secrets live on the backing automation routine's env, not in stage
+  // config. This narrow route updates only that env (and its secret bindings)
+  // so saving secrets never clobbers unrelated stage settings.
+  updateStageAutomationEnv: (
+    pipelineId: string,
+    stageId: string,
+    data: { env: RoutineEnvConfig | null; baseRoutineRevisionId?: string | null },
+  ) => api.patch<PipelineStage>(`/pipelines/${pipelineId}/stages/${stageId}/automation-env`, data),
   deleteStage: (
     pipelineId: string,
     stageId: string,
