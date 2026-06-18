@@ -327,16 +327,16 @@ describe("PipelineSettings", () => {
     queryClient.clear();
   });
 
-  it("renders the Automation section and drops the old plain-text fields", async () => {
+  it("renders the combined Automation section without the old Overview tab", async () => {
     const { container, root, queryClient } = renderSettings();
     await flushQueries();
 
-    flushSync(() => {
-      findButton(container, "Automation")!.click();
-    });
-
     const headings = Array.from(container.querySelectorAll("h2")).map((heading) => heading.textContent ?? "");
     expect(headings).toContain("Automation");
+    expect(headings).not.toContain("Overview");
+    expect(findButton(container, "Overview")).toBeUndefined();
+    expect(container.textContent).toContain("Name");
+    expect(container.textContent).toContain("Step type");
     expect(headings).not.toContain("What happens here");
     expect(headings).not.toContain("Routine variables");
     expect(container.textContent).toContain("When an item enters this step");
@@ -350,7 +350,7 @@ describe("PipelineSettings", () => {
     queryClient.clear();
   });
 
-  it("shows intake fields on the first stage settings overview", async () => {
+  it("shows intake fields in the first stage Automation section", async () => {
     const intakePipeline = makePipeline();
     const intakeStage = intakePipeline.stages[0]!;
     const intakeStageConfig =
@@ -413,7 +413,9 @@ describe("PipelineSettings", () => {
     });
     await flushQueries();
 
-    expect(container.textContent).not.toContain("Intake fields");
+    expect(container.textContent).not.toContain("These fields power Add item forms and other pipelines' Carry over pickers.");
+    expect(container.textContent).not.toContain("Customer");
+    expect(container.textContent).toContain("No intake fields yet.");
 
     flushSync(() => {
       root.unmount();

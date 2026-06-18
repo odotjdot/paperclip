@@ -80,7 +80,7 @@ import {
   type BreakdownCopyNames,
 } from "../lib/pipeline-breakdown";
 
-type StageSectionKey = "overview" | "instructions" | "advanced" | "secrets" | "runs" | "activity" | "history";
+type StageSectionKey = "instructions" | "advanced" | "secrets" | "runs" | "activity" | "history";
 type ApproverKind = "any_human" | "user" | "agent";
 type EditableStageKind = "working" | "review" | "done" | "cancelled";
 
@@ -130,7 +130,6 @@ const STAGE_NAV_GROUPS: Array<{
   {
     label: "Stage",
     items: [
-      { id: "overview", label: "Overview", icon: Circle },
       { id: "instructions", label: "Automation", icon: LayoutGrid },
       { id: "secrets", label: "Secrets", icon: KeyRound },
       { id: "advanced", label: "Advanced", icon: SlidersHorizontal },
@@ -147,7 +146,6 @@ const STAGE_NAV_GROUPS: Array<{
 ];
 
 const STAGE_SECTION_TITLES: Record<StageSectionKey, string> = {
-  overview: "Overview",
   instructions: "Automation",
   secrets: "Secrets",
   runs: "Runs",
@@ -479,7 +477,7 @@ function stageNavGroups(kind: string): typeof STAGE_NAV_GROUPS {
   if (!isPipelineTerminalStageKind(kind)) return STAGE_NAV_GROUPS;
   return STAGE_NAV_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => item.id !== "instructions" && item.id !== "advanced"),
+    items: group.items.filter((item) => item.id !== "advanced"),
   })).filter((group) => group.items.length > 0);
 }
 
@@ -642,7 +640,7 @@ export function PipelineSettings() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const [activeStageSection, setActiveStageSection] = useState<StageSectionKey>("overview");
+  const [activeStageSection, setActiveStageSection] = useState<StageSectionKey>("instructions");
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
   const [stageName, setStageName] = useState("");
   const [stageKind, setStageKind] = useState("open");
@@ -877,7 +875,7 @@ export function PipelineSettings() {
       group.items.some((item) => item.id === activeStageSection),
     );
     if (!sectionAvailable) {
-      setActiveStageSection("overview");
+      setActiveStageSection("instructions");
     }
   }, [activeStageSection, selectedStage]);
 
@@ -1141,8 +1139,8 @@ export function PipelineSettings() {
 
   const setStageKindWithDefaults = (kind: string) => {
     setStageKind(kind);
-    if (isPipelineTerminalStageKind(kind) && (activeStageSection === "instructions" || activeStageSection === "advanced")) {
-      setActiveStageSection("overview");
+    if (isPipelineTerminalStageKind(kind) && activeStageSection === "advanced") {
+      setActiveStageSection("instructions");
     }
     if (kind === "review") {
       setApproveTarget((current) => current || defaultReviewTarget(stages, selectedStage?.id ?? null, "done"));
@@ -1642,7 +1640,7 @@ export function PipelineSettings() {
                     <h2 className="text-lg font-semibold text-foreground">
                       {STAGE_SECTION_TITLES[activeStageSection]}
                     </h2>
-                    {activeStageSection === "overview" ? (
+                    {activeStageSection === "instructions" ? (
                       <div className="flex items-center gap-2">
                         <Button
                           type="button"
@@ -1679,7 +1677,7 @@ export function PipelineSettings() {
                     warnings={healthWarningsByStage[selectedStage.id] ?? []}
                   />
 
-                  {activeStageSection === "overview" ? (
+                  {activeStageSection === "instructions" ? (
                     <div className="w-full max-w-3xl">
                       <div className="divide-y divide-border border-b border-border">
                         <FieldRow label="Name">
@@ -1893,8 +1891,8 @@ export function PipelineSettings() {
                     </div>
                   ) : null}
 
-                  {activeStageSection === "instructions" ? (
-                    <div className="w-full max-w-3xl space-y-6">
+                  {activeStageSection === "instructions" && !isPipelineTerminalStageKind(stageKind) ? (
+                    <div className="mt-8 w-full max-w-3xl space-y-6">
                       <div className="overflow-x-auto overscroll-x-contain">
                         <div className="inline-flex min-w-full flex-wrap items-center gap-2 text-sm text-muted-foreground sm:min-w-max sm:flex-nowrap">
                           <span>When an item enters this step</span>
