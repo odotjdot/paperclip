@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   Braces,
@@ -30,11 +30,11 @@ import { InlineEntitySelector } from "../InlineEntitySelector";
 import { DocumentAnnotationsCountChip, IssueDocumentAnnotations } from "../IssueDocumentAnnotations";
 import { AgentIcon } from "../AgentIconPicker";
 import { MarkdownEditor } from "../MarkdownEditor";
-import { ScheduleEditor } from "../ScheduleEditor";
+import { ScheduleEditor, getScheduleCronValidation } from "../ScheduleEditor";
 import { RoutineVariablesEditor, RoutineVariablesHint } from "../RoutineVariablesEditor";
 import { RoutineTriggerCard } from "../RoutineTriggerCard";
 import { EnvVarEditor } from "../EnvVarEditor";
-import { useRoutineDetail } from "./context";
+import { createDefaultNewTrigger, useRoutineDetail } from "./context";
 import type { EnvBinding, RoutineDetail as RoutineDetailType } from "@paperclipai/shared";
 
 const concurrencyPolicyOptions = [
@@ -388,6 +388,18 @@ export function TriggersSection() {
   const ctx = useRoutineDetail();
   const { routine, newTrigger, setNewTrigger, createTrigger, updateTrigger, deleteTrigger, rotateTrigger } = ctx;
   const [addOpen, setAddOpen] = useState(false);
+  const [newScheduleEditorValid, setNewScheduleEditorValid] = useState(true);
+  const newScheduleValidation = useMemo(
+    () => newTrigger.kind === "schedule" ? getScheduleCronValidation(newTrigger.cronExpression) : null,
+    [newTrigger.cronExpression, newTrigger.kind],
+  );
+  const addDisabled =
+    createTrigger.isPending ||
+    (newScheduleValidation ? !newScheduleValidation.valid || !newScheduleEditorValid : false);
+
+  useEffect(() => {
+    if (newTrigger.kind !== "schedule") setNewScheduleEditorValid(true);
+  }, [newTrigger.kind]);
 
   return (
     <div className="space-y-4">
@@ -450,6 +462,7 @@ export function TriggersSection() {
                 onChange={(cronExpression) =>
                   setNewTrigger((current) => ({ ...current, cronExpression }))
                 }
+                onValidityChange={setNewScheduleEditorValid}
               />
             </div>
           )}
@@ -498,8 +511,15 @@ export function TriggersSection() {
           </Button>
           <Button
             size="sm"
-            onClick={() => createTrigger.mutate(undefined, { onSuccess: () => setAddOpen(false) })}
-            disabled={createTrigger.isPending}
+            onClick={() =>
+              createTrigger.mutate(undefined, {
+                onSuccess: () => {
+                  setNewTrigger(createDefaultNewTrigger());
+                  setAddOpen(false);
+                },
+              })
+            }
+            disabled={addDisabled}
           >
             {createTrigger.isPending ? "Adding..." : "Add trigger"}
           </Button>
