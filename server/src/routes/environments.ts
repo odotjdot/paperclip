@@ -42,6 +42,7 @@ export function environmentRoutes(
   const instanceSettings = instanceSettingsService(db);
   const projects = projectService(db);
   const secrets = secretService(db);
+  const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
 
   function parseObject(value: unknown): Record<string, unknown> {
     return value && typeof value === "object" && !Array.isArray(value)
@@ -203,6 +204,11 @@ export function environmentRoutes(
     const actor = getActorInfo(req);
     const input = {
       ...req.body,
+      envVars: await secrets.normalizeEnvBindingsForPersistence(
+        companyId,
+        req.body.envVars,
+        { strictMode: strictSecretsMode, fieldPath: "envVars" },
+      ),
       config: await normalizeEnvironmentConfigForPersistence({
         db,
         companyId,
@@ -222,6 +228,11 @@ export function environmentRoutes(
       companyId,
       { targetType: "environment", targetId: environment.id },
       await collectEnvironmentSecretRefs({ db, environment }),
+    );
+    await secrets.syncEnvBindingsForTarget(
+      companyId,
+      { targetType: "environment", targetId: environment.id },
+      environment.envVars,
     );
     await logInstanceEnvironmentActivity({
       actor,
@@ -280,7 +291,7 @@ export function environmentRoutes(
     const nextDriver = req.body.driver ?? existing.driver;
     const nextName = req.body.name ?? existing.name;
     const companyIdForSecrets =
-      req.body.config !== undefined || req.body.driver !== undefined
+      req.body.config !== undefined || req.body.driver !== undefined || req.body.envVars !== undefined
         ? await resolveEnvironmentSecretContextCompanyId(req, existing.id, { required: true })
         : null;
     const configSource =
@@ -296,6 +307,15 @@ export function environmentRoutes(
           : existing.config;
     const patch = {
       ...req.body,
+      ...(req.body.envVars !== undefined
+        ? {
+            envVars: await secrets.normalizeEnvBindingsForPersistence(
+              companyIdForSecrets!,
+              req.body.envVars,
+              { strictMode: strictSecretsMode, fieldPath: "envVars" },
+            ),
+          }
+        : {}),
       ...(req.body.config !== undefined || req.body.driver !== undefined
         ? {
             config: await normalizeEnvironmentConfigForPersistence({
@@ -324,6 +344,13 @@ export function environmentRoutes(
         companyIdForSecrets!,
         { targetType: "environment", targetId: environment.id },
         await collectEnvironmentSecretRefs({ db, environment }),
+      );
+    }
+    if (patch.envVars !== undefined) {
+      await secrets.syncEnvBindingsForTarget(
+        companyIdForSecrets!,
+        { targetType: "environment", targetId: environment.id },
+        environment.envVars,
       );
     }
     await logInstanceEnvironmentActivity({

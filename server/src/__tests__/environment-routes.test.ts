@@ -23,6 +23,10 @@ const mockProjectService = vi.hoisted(() => ({
   getById: vi.fn(),
 }));
 
+const mockInstanceSettingsService = vi.hoisted(() => ({
+  listCompanyIds: vi.fn(),
+}));
+
 const mockEnvironmentService = vi.hoisted(() => ({
   list: vi.fn(),
   getById: vi.fn(),
@@ -36,8 +40,11 @@ const mockLogActivity = vi.hoisted(() => vi.fn());
 const mockProbeEnvironment = vi.hoisted(() => vi.fn());
 const mockSecretService = vi.hoisted(() => ({
   create: vi.fn(),
+  normalizeEnvBindingsForPersistence: vi.fn(),
+  listBindingCompanyIdsForTarget: vi.fn(),
   resolveSecretValue: vi.fn(),
   resolveSecretValueForEphemeralAccess: vi.fn(),
+  syncEnvBindingsForTarget: vi.fn(),
   syncSecretRefsForTarget: vi.fn(),
   remove: vi.fn(),
 }));
@@ -48,9 +55,8 @@ const mockResolvePluginSandboxProviderDriverByKey = vi.hoisted(() => vi.fn());
 const mockExecutionWorkspaceService = vi.hoisted(() => ({}));
 
 vi.mock("../services/index.js", () => ({
-  accessService: () => mockAccessService,
-  agentService: () => mockAgentService,
   issueService: () => mockIssueService,
+  instanceSettingsService: () => mockInstanceSettingsService,
   environmentService: () => mockEnvironmentService,
   logActivity: mockLogActivity,
   projectService: () => mockProjectService,
@@ -89,6 +95,7 @@ function createEnvironment() {
     driver: "local",
     status: "active" as const,
     config: { shell: "zsh" },
+    envVars: {},
     metadata: { source: "manual" },
     createdAt: now,
     updatedAt: now,
@@ -148,6 +155,7 @@ describe("environment routes", () => {
     mockAgentService.getById.mockReset();
     mockIssueService.getById.mockReset();
     mockProjectService.getById.mockReset();
+    mockInstanceSettingsService.listCompanyIds.mockReset();
     mockEnvironmentService.list.mockReset();
     mockEnvironmentService.list.mockResolvedValue([]);
     mockEnvironmentService.getById.mockReset();
@@ -158,13 +166,20 @@ describe("environment routes", () => {
     mockLogActivity.mockReset();
     mockProbeEnvironment.mockReset();
     mockSecretService.create.mockReset();
+    mockSecretService.normalizeEnvBindingsForPersistence.mockReset();
+    mockSecretService.listBindingCompanyIdsForTarget.mockReset();
     mockSecretService.resolveSecretValue.mockReset();
     mockSecretService.resolveSecretValueForEphemeralAccess.mockReset();
+    mockSecretService.syncEnvBindingsForTarget.mockReset();
     mockSecretService.syncSecretRefsForTarget.mockReset();
     mockSecretService.remove.mockReset();
     mockSecretService.create.mockResolvedValue({
       id: "11111111-1111-1111-1111-111111111111",
     });
+    mockInstanceSettingsService.listCompanyIds.mockResolvedValue(["company-1"]);
+    mockSecretService.normalizeEnvBindingsForPersistence.mockImplementation(async (_companyId, env) => env ?? {});
+    mockSecretService.listBindingCompanyIdsForTarget.mockResolvedValue([]);
+    mockSecretService.syncEnvBindingsForTarget.mockResolvedValue([]);
     mockSecretService.syncSecretRefsForTarget.mockResolvedValue([]);
     mockSecretService.remove.mockResolvedValue(null);
     mockSecretService.resolveSecretValueForEphemeralAccess.mockResolvedValue("resolved-provider-key");

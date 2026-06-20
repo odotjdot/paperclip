@@ -30,8 +30,10 @@ const mockLogActivity = vi.hoisted(() => vi.fn());
 
 const mockSecretService = vi.hoisted(() => ({
   create: vi.fn(),
+  normalizeEnvBindingsForPersistence: vi.fn(),
   listBindingCompanyIdsForTarget: vi.fn(),
   resolveSecretValueForEphemeralAccess: vi.fn(),
+  syncEnvBindingsForTarget: vi.fn(),
   syncSecretRefsForTarget: vi.fn(),
 }));
 
@@ -98,13 +100,18 @@ describe("environment instance routes", () => {
     mockExecutionWorkspaceService.clearEnvironmentSelection.mockReset();
     mockLogActivity.mockReset();
     mockSecretService.create.mockReset();
+    mockSecretService.normalizeEnvBindingsForPersistence.mockReset();
     mockSecretService.listBindingCompanyIdsForTarget.mockReset();
     mockSecretService.resolveSecretValueForEphemeralAccess.mockReset();
+    mockSecretService.syncEnvBindingsForTarget.mockReset();
     mockSecretService.syncSecretRefsForTarget.mockReset();
 
     mockInstanceSettingsService.listCompanyIds.mockResolvedValue(["company-1", "company-2"]);
     mockEnvironmentService.list.mockResolvedValue([]);
     mockEnvironmentService.create.mockResolvedValue(createEnvironment());
+    mockSecretService.normalizeEnvBindingsForPersistence.mockImplementation(async (_companyId, env) => env ?? {});
+    mockSecretService.listBindingCompanyIdsForTarget.mockResolvedValue([]);
+    mockSecretService.syncEnvBindingsForTarget.mockResolvedValue([]);
     mockSecretService.syncSecretRefsForTarget.mockResolvedValue([]);
   });
 
@@ -193,8 +200,49 @@ describe("environment instance routes", () => {
       { targetType: "environment", targetId: "env-1" },
       [],
     );
+    expect(mockSecretService.syncEnvBindingsForTarget).toHaveBeenCalledWith(
+      "company-1",
+      { targetType: "environment", targetId: "env-1" },
+      {},
+    );
     expect(mockLogActivity).toHaveBeenCalledTimes(2);
     expect(mockLogActivity.mock.calls.map((call) => call[1].companyId)).toEqual(["company-1", "company-2"]);
+  });
+
+  it("normalizes and syncs environment envVars on create", async () => {
+    const envVars = {
+      ANTHROPIC_API_KEY: { type: "secret_ref", secretId: "11111111-1111-4111-8111-111111111111", version: "latest" },
+    };
+    mockSecretService.normalizeEnvBindingsForPersistence.mockResolvedValue(envVars);
+    mockEnvironmentService.create.mockResolvedValue(createEnvironment({ envVars }));
+    const app = createApp({
+      type: "board",
+      userId: "board-1",
+      source: "local_implicit",
+      isInstanceAdmin: true,
+    });
+
+    const res = await request(app)
+      .post("/api/companies/company-1/environments")
+      .send({
+        name: "Shared Local",
+        driver: "local",
+        config: {},
+        envVars,
+      });
+
+    expect(res.status).toBe(201);
+    expect(mockSecretService.normalizeEnvBindingsForPersistence).toHaveBeenCalledWith(
+      "company-1",
+      envVars,
+      expect.objectContaining({ fieldPath: "envVars" }),
+    );
+    expect(mockEnvironmentService.create).toHaveBeenCalledWith(expect.objectContaining({ envVars }));
+    expect(mockSecretService.syncEnvBindingsForTarget).toHaveBeenCalledWith(
+      "company-1",
+      { targetType: "environment", targetId: "env-1" },
+      envVars,
+    );
   });
 
   it("returns full environment details for an instance admin", async () => {
