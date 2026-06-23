@@ -1814,7 +1814,7 @@ describe("IssueProperties", () => {
             displayKey: null,
             iconKey: "github",
             statusCategory: "succeeded",
-            statusIconKey: "git-merge",
+            statusIconKey: null,
             statusLabel: "Merged",
             liveness: "fresh",
             displayTitle: "acme/web#241: Add rich object presentation metadata",
@@ -1868,6 +1868,9 @@ describe("IssueProperties", () => {
     expect(pullRequestLink?.textContent).not.toContain("acme/web#241");
     expect(pullRequestLink?.textContent).not.toContain("Github Pull Request");
     expect(pullRequestLink?.querySelectorAll("svg")).toHaveLength(1);
+    expect(pullRequestLink?.className).not.toContain("paperclip-mention-chip");
+    expect(pullRequestLink?.className).not.toContain("rounded-full");
+    expect(pullRequestLink?.className).not.toContain("border");
 
     act(() => root.unmount());
   });

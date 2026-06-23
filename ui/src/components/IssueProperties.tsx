@@ -35,14 +35,19 @@ import { PriorityIcon } from "./PriorityIcon";
 import { Identity } from "./Identity";
 import { IssueReferencePill } from "./IssueReferencePill";
 import { formatDate, formatDateTime, cn, projectUrl } from "../lib/utils";
-import { ExternalObjectPill } from "./ExternalObjectPill";
+import { ExternalObjectStatusIcon } from "./ExternalObjectStatusIcon";
 import type { IssueExternalObjectGroup } from "../hooks/useIssueExternalObjects";
 import {
+  externalObjectCategoryLabel,
   externalObjectIconForKey,
   externalObjectProviderLabel,
   externalObjectToneSeverity,
   externalObjectTypeLabel,
 } from "../lib/external-objects";
+import {
+  externalObjectStatusIcon,
+  externalObjectStatusIconDefault,
+} from "../lib/status-colors";
 import { timeAgo } from "../lib/timeAgo";
 import { Button } from "@/components/ui/button";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -214,6 +219,116 @@ function externalObjectRowLabel(group: IssueExternalObjectGroup): React.ReactNod
     <span className="inline-flex min-w-0 items-start gap-1">
       {Icon ? <Icon aria-hidden="true" className="h-3 w-3 shrink-0 mt-0.5" /> : null}
       <span className="whitespace-normal break-words leading-tight">{displayKey}</span>
+    </span>
+  );
+}
+
+function githubObjectPropertyValue(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname !== "github.com") return null;
+    const [, owner, repo, kind, number] = parsed.pathname.split("/");
+    if (!owner || !repo || !number) return null;
+    if (kind === "pull") return `PR ${number}`;
+    if (kind === "issues") return `Issue ${number}`;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function externalObjectPropertyStatusLabel(group: IssueExternalObjectGroup): string {
+  return group.pill.statusLabel ?? externalObjectCategoryLabel(group.pill.statusCategory);
+}
+
+function externalObjectPropertyValue(group: IssueExternalObjectGroup): string {
+  const { pill } = group;
+  const statusLabel = externalObjectPropertyStatusLabel(group);
+  const githubLabel = pill.providerKey === "github" ? githubObjectPropertyValue(pill.url) : null;
+  const base = githubLabel ?? pill.displayTitle?.trim() ?? externalObjectRowDisplayKey(group);
+  return statusLabel ? `${base} - ${statusLabel}` : base;
+}
+
+function isMergedExternalObject(group: IssueExternalObjectGroup): boolean {
+  const statusLabel = externalObjectPropertyStatusLabel(group);
+  return group.pill.statusIconKey === "git-merge" || statusLabel.toLowerCase() === "merged";
+}
+
+function externalObjectPropertyTone(group: IssueExternalObjectGroup): string {
+  if (isMergedExternalObject(group)) {
+    return "text-violet-600 dark:text-violet-400";
+  }
+  const tone = externalObjectStatusIcon[group.pill.statusCategory] ?? externalObjectStatusIconDefault;
+  return tone.split(" ").filter((c) => c.startsWith("text-")).join(" ");
+}
+
+function externalObjectPropertyStatusIconKey(group: IssueExternalObjectGroup): string | null | undefined {
+  if (isMergedExternalObject(group)) return group.pill.statusIconKey ?? "git-merge";
+  return group.pill.statusIconKey;
+}
+
+function externalObjectPropertyTitle(group: IssueExternalObjectGroup): string {
+  const { pill, sourceLabels } = group;
+  const base = pill.displayTitle ?? externalObjectPropertyValue(group);
+  return sourceLabels.length > 0 ? `${base} - ${sourceLabels.join(", ")}` : base;
+}
+
+function ExternalObjectPropertyValue({ group }: { group: IssueExternalObjectGroup }) {
+  const { pill, mentionCount } = group;
+  const statusLabel = externalObjectPropertyStatusLabel(group);
+  const providerLabel = externalObjectProviderLabel(pill.providerKey);
+  const typeLabel = externalObjectTypeLabel(pill.objectType);
+  const value = externalObjectPropertyValue(group);
+  const content = (
+    <>
+      <ExternalObjectStatusIcon
+        category={pill.statusCategory}
+        liveness={pill.liveness}
+        statusIconKey={externalObjectPropertyStatusIconKey(group)}
+        sizeClassName="h-3 w-3"
+        label={`${providerLabel}: ${statusLabel}`}
+      />
+      <span className="min-w-0 truncate">{value}</span>
+      {mentionCount > 1 ? (
+        <span className="tabular-nums text-[10px] font-medium opacity-80">x{mentionCount}</span>
+      ) : null}
+    </>
+  );
+  const className = cn(
+    "inline-flex min-w-0 max-w-full items-center gap-1 text-xs font-medium no-underline",
+    externalObjectPropertyTone(group),
+    pill.url ? "hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring" : "",
+  );
+
+  if (pill.url) {
+    return (
+      <a
+        href={pill.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        data-mention-kind="external-object"
+        data-external-status={pill.statusCategory}
+        data-external-liveness={pill.liveness}
+        className={className}
+        title={externalObjectPropertyTitle(group)}
+        aria-label={`${providerLabel} ${typeLabel} - ${statusLabel}: ${pill.displayTitle ?? value}`}
+      >
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <span
+      data-mention-kind="external-object"
+      data-external-status={pill.statusCategory}
+      data-external-liveness={pill.liveness}
+      className={className}
+      title={externalObjectPropertyTitle(group)}
+      aria-label={`${providerLabel} ${typeLabel} - ${statusLabel}: ${pill.displayTitle ?? value}`}
+    >
+      {content}
     </span>
   );
 }
@@ -2249,19 +2364,14 @@ export function IssueProperties({
           <>
             {sortExternalObjectGroups(externalObjects)
               .map((externalObject) => {
-                const { pill, mentionCount, sourceLabels, group } = externalObject;
+                const { pill, group } = externalObject;
                 return (
                   <PropertyRow
                     key={group.object?.id ?? `${pill.providerKey}:${pill.objectType}:${pill.url ?? "anon"}`}
                     label={externalObjectRowLabel(externalObject)}
                     labelClassName="w-24 max-w-24 whitespace-normal leading-tight"
                   >
-                    <ExternalObjectPill
-                      object={pill}
-                      sourceCount={mentionCount}
-                      sourceSummary={sourceLabels.join(", ")}
-                      showProviderIcon={false}
-                    />
+                    <ExternalObjectPropertyValue group={externalObject} />
                   </PropertyRow>
                 );
               })}
