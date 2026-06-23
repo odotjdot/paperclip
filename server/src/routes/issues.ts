@@ -7309,6 +7309,7 @@ export function issueRoutes(
       {
         afterTombstone: async (deletedComment, tx) => {
           await issueReferencesSvc.syncComment(deletedComment.id, tx);
+          await externalObjectsSvc.syncCommentSafely(deletedComment.id, tx);
           annotationCleanup = await documentAnnotationsSvc.cleanupForIssueCommentDeletion(issue.id, deletedComment.id, {
             actorType: actor.actorType,
             actorId: actor.actorId,
@@ -7318,7 +7319,10 @@ export function issueRoutes(
           }, tx);
           await Promise.all(
             annotationCleanup.deletedCommentIds.map((annotationCommentId) =>
-              issueReferencesSvc.deleteCommentSource(annotationCommentId, tx)
+              Promise.all([
+                issueReferencesSvc.deleteCommentSource(annotationCommentId, tx),
+                externalObjectsSvc.syncCommentSafely(annotationCommentId, tx),
+              ])
             ),
           );
         },

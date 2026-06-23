@@ -581,8 +581,8 @@ export function externalObjectService(
     await safeSync("issue", () => syncIssue(issueId));
   }
 
-  async function syncCommentSafely(commentId: string) {
-    await safeSync("comment", () => syncComment(commentId));
+  async function syncCommentSafely(commentId: string, dbOrTx: any = db) {
+    await safeSync("comment", () => syncComment(commentId, dbOrTx));
   }
 
   async function syncDocumentSafely(documentId: string) {
