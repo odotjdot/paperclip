@@ -66,7 +66,6 @@ function accumulateUsage(
  */
 export function parseAgySingleJson(stdout: string) {
   const usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
-  const messages: string[] = [];
   let errorMessage: string | null = null;
   let costUsd: number | null = null;
   let resultEvent: Record<string, unknown> | null = null;
@@ -86,8 +85,10 @@ export function parseAgySingleJson(stdout: string) {
       asNumber(event.total_cost_usd, asNumber(event.cost_usd, asNumber(event.cost, 0))) || costUsd;
 
     const status = asString(event.status, "").toLowerCase();
+    const type = asString(event.type, "").toLowerCase();
     const isError =
       event.is_error === true ||
+      type === "error" ||
       asString(event.subtype, "").toLowerCase() === "error" ||
       status === "error" ||
       status === "failed";
@@ -97,33 +98,36 @@ export function parseAgySingleJson(stdout: string) {
       if (text) errorMessage = text;
     }
 
-    // Extract text from result/response/output fields
+    const parts: string[] = [];
     const resultText =
       asString(event.result, "").trim() ||
       asString(event.response, "").trim() ||
       asString(event.output, "").trim() ||
       asString(event.text, "").trim();
-    if (resultText) messages.push(resultText);
+    if (resultText) parts.push(resultText);
+    parts.push(...collectMessageText(event.message));
 
-    // Also collect from message field
-    messages.push(...collectMessageText(event.message));
-
-    return { summary: messages.join("\n\n").trim(), usage, costUsd, errorMessage, resultEvent };
+    return { summary: parts.join("\n\n").trim(), usage, costUsd, errorMessage, resultEvent };
   }
 
-  // Fall back to JSONL parsing (one event per line)
+  // Fall back to JSONL parsing (one event per line).
+  // Separate structured content (from JSON events) from plain-text noise so we
+  // can prefer the structured output and avoid leaking "Running agy..." lines.
+  const structuredMessages: string[] = [];
+  const plainTextLines: string[] = [];
+  let hadStructuredEvent = false;
+
   for (const rawLine of trimmed.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
 
     const event = parseJson(line);
     if (!event || typeof event !== "object" || Array.isArray(event)) {
-      // Plain text line
-      const text = line.trim();
-      if (text) messages.push(text);
+      plainTextLines.push(line);
       continue;
     }
 
+    hadStructuredEvent = true;
     const record = event as Record<string, unknown>;
     const type = asString(record.type, "").trim();
 
@@ -147,14 +151,14 @@ export function parseAgySingleJson(stdout: string) {
         asString(record.response, "").trim() ||
         asString(record.output, "").trim() ||
         asString(record.text, "").trim();
-      if (resultText && messages.length === 0) messages.push(resultText);
+      if (resultText) structuredMessages.push(resultText);
       continue;
     }
 
     if (type === "assistant" || type === "message") {
       const role = asString(record.role, "").trim().toLowerCase();
       if (!role || role === "assistant") {
-        messages.push(...collectMessageText(record.message ?? record.content));
+        structuredMessages.push(...collectMessageText(record.message ?? record.content));
       }
       continue;
     }
@@ -181,12 +185,19 @@ export function parseAgySingleJson(stdout: string) {
     }
   }
 
-  // If no structured messages, use raw stdout as the summary
-  if (messages.length === 0 && trimmed.length > 0) {
-    messages.push(trimmed);
+  // Prefer structured messages over plain-text noise.
+  // If no structured events at all, use the raw trimmed stdout.
+  let summary: string;
+  if (structuredMessages.length > 0) {
+    summary = structuredMessages.join("\n\n").trim();
+  } else if (hadStructuredEvent) {
+    summary = ""; // structured events found but no text extracted (e.g. pure error events)
+  } else {
+    // Pure plain-text output — preserve original line breaks with \n, not \n\n
+    summary = plainTextLines.length > 0 ? plainTextLines.join("\n") : trimmed;
   }
 
-  return { summary: messages.join("\n\n").trim(), usage, costUsd, errorMessage, resultEvent };
+  return { summary, usage, costUsd, errorMessage, resultEvent };
 }
 
 const AGY_AUTH_REQUIRED_RE =
