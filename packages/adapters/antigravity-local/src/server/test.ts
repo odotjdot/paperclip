@@ -12,7 +12,6 @@ import {
 } from "@paperclipai/adapter-utils/server-utils";
 import {
   ensureAdapterExecutionTargetCommandResolvable,
-  maybeRunSandboxInstallCommand,
   ensureAdapterExecutionTargetDirectory,
   runAdapterExecutionTargetProcess,
   describeAdapterExecutionTarget,
@@ -90,16 +89,9 @@ export async function testEnvironment(
   }
   const runtimeEnv = ensurePathInEnv({ ...process.env, ...env });
 
-  // agy is a Go binary — no npm install command
-  const installCheck = await maybeRunSandboxInstallCommand({
-    runId,
-    target,
-    adapterKey: "antigravity",
-    installCommand: null,
-    detectCommand: command,
-    env,
-  });
-  if (installCheck) checks.push(installCheck);
+  // agy is a Go binary with no install command, so there is no sandbox install
+  // gate to run (maybeRunSandboxInstallCommand is a no-op without one) — the
+  // resolvability check below is the presence probe.
 
   // AC1: named failure when agy is absent (not a crash)
   try {

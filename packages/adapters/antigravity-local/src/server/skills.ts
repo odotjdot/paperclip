@@ -58,10 +58,7 @@ export async function syncAgySkills(
   desiredSkills: string[],
 ): Promise<AdapterSkillSnapshot> {
   const availableEntries = await readPaperclipRuntimeSkillEntries(ctx.config, __moduleDir);
-  const desiredSet = new Set([
-    ...desiredSkills,
-    ...availableEntries.filter((entry) => entry.required).map((entry) => entry.key),
-  ]);
+  const desiredSet = new Set(desiredSkills);
   const skillsHome = resolveAgySkillsHome(ctx.config);
   await fs.mkdir(skillsHome, { recursive: true });
   const installed = await readInstalledSkillTargets(skillsHome);

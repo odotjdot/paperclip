@@ -75,7 +75,10 @@ export const AGENT_ROLE_LABELS: Record<AgentRole, string> = {
   general: "General",
 };
 
-export const AGENT_DEFAULT_MAX_CONCURRENT_RUNS = 20;
+// FM fork (2026-07-04): upstream default of 20 livelocked a 16GB workstation — each run is a
+// full Claude CLI process (~1GB+). 3 is the safe default for single-machine deployments;
+// raise per-agent via heartbeat config where the host can take it.
+export const AGENT_DEFAULT_MAX_CONCURRENT_RUNS = 3;
 export const WORKSPACE_BRANCH_ROUTINE_VARIABLE = "workspaceBranch";
 
 export const MODEL_PROFILE_KEYS = ["cheap"] as const;
