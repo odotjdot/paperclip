@@ -60,3 +60,7 @@ tests/release-smoke/playwright-report/
 .superpowers/
 .claude/worktrees/
 .herenow
+
+# local docker secrets
+docker/.env.local
+docker/.env.authentik

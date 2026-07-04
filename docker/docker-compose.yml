@@ -15,7 +15,8 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
-  server:
+  paperclip:
+    container_name: paperclip
     build:
       context: ..
       dockerfile: Dockerfile

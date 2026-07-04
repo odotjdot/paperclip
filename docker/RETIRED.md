@@ -1,0 +1,1 @@
+The fmservices stack now lives at ~/APPS/fmservices (monorepo). The custom override/authentik compose was retired to fmservices-backups/20260628-225953/retired-old-compose/ on cutover. Do not run the stack from here.
