@@ -70,6 +70,16 @@ import {
 } from "@paperclipai/adapter-cursor-cloud/server";
 import { agentConfigurationDoc as cursorCloudAgentConfigurationDoc } from "@paperclipai/adapter-cursor-cloud";
 import {
+  execute as antigravityExecute,
+  listAgySkills,
+  syncAgySkills,
+  testEnvironment as antigravityTestEnvironment,
+} from "@paperclipai/adapter-antigravity-local/server";
+import {
+  agentConfigurationDoc as antigravityAgentConfigurationDoc,
+  models as antigravityModels,
+} from "@paperclipai/adapter-antigravity-local";
+import {
   execute as geminiExecute,
   listGeminiSkills,
   syncGeminiSkills,
@@ -306,6 +316,20 @@ const cursorCloudAdapter: ServerAdapterModule = {
   getConfigSchema: getCursorCloudConfigSchema,
 };
 
+const antigravityLocalAdapter: ServerAdapterModule = {
+  type: "antigravity_local",
+  execute: antigravityExecute,
+  testEnvironment: antigravityTestEnvironment,
+  listSkills: listAgySkills,
+  syncSkills: syncAgySkills,
+  models: antigravityModels,
+  supportsLocalAgentJwt: true,
+  supportsInstructionsBundle: true,
+  instructionsPathKey: "instructionsFilePath",
+  requiresMaterializedRuntimeSkills: true,
+  agentConfigurationDoc: antigravityAgentConfigurationDoc,
+};
+
 const geminiLocalAdapter: ServerAdapterModule = {
   type: "gemini_local",
   execute: geminiExecute,
@@ -420,6 +444,7 @@ function registerBuiltInAdapters() {
     piLocalAdapter,
     cursorCloudAdapter,
     cursorLocalAdapter,
+    antigravityLocalAdapter,
     geminiLocalAdapter,
     grokLocalAdapter,
     hermesGatewayAdapter,
