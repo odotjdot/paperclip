@@ -228,6 +228,18 @@ const MAX_RUN_EVENT_PAYLOAD_DEPTH = 6;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = AGENT_DEFAULT_MAX_CONCURRENT_RUNS;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_MIN = 1;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_MAX = 50;
+// Company-wide ceiling on concurrently RUNNING heartbeat runs. Per-agent
+// maxConcurrentRuns bounds self-overlap only; with N agents the org can still
+// light up N runs at once and starve the host (2026-07-04/05 livelocks). A run
+// over this cap stays "queued" (claimQueuedRun returns null — both callers
+// already treat null as leave-queued) and is retried on the agent's next
+// wake/drain tick.
+const HEARTBEAT_COMPANY_MAX_CONCURRENT_RUNS_DEFAULT = 4;
+const HEARTBEAT_COMPANY_MAX_CONCURRENT_RUNS = (() => {
+  const raw = Number(process.env.PAPERCLIP_COMPANY_MAX_CONCURRENT_RUNS);
+  const parsed = Number.isFinite(raw) ? Math.floor(raw) : HEARTBEAT_COMPANY_MAX_CONCURRENT_RUNS_DEFAULT;
+  return Math.max(HEARTBEAT_MAX_CONCURRENT_RUNS_MIN, Math.min(HEARTBEAT_MAX_CONCURRENT_RUNS_MAX, parsed));
+})();
 const LIVENESS_BOOKKEEPING_ACTIVITY_ACTIONS = [
   "environment.lease_acquired",
   "environment.lease_released",
@@ -7402,6 +7414,14 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     return Number(count ?? 0);
   }
 
+  async function countRunningRunsForCompany(companyId: string) {
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(heartbeatRuns)
+      .where(and(eq(heartbeatRuns.companyId, companyId), eq(heartbeatRuns.status, "running")));
+    return Number(count ?? 0);
+  }
+
   async function claimQueuedRun(run: typeof heartbeatRuns.$inferSelect, companyAgents?: AgentOrgRow[]) {
     if (run.status !== "queued") return run;
     const agent = await getAgent(run.agentId);
@@ -7414,6 +7434,18 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       : await getAgentInvokability(agent);
     if (!invokability.invokable) {
       await cancelRunInternal(run.id, `Cancelled because the agent is not invokable: ${invokability.reason}`);
+      return null;
+    }
+
+    // Company-wide concurrency gate (Complete Mediation: claimQueuedRun is the
+    // sole queued→running transition, so every start path inherits this). Over
+    // the cap the run is NOT cancelled — it stays queued for a later drain tick.
+    const companyRunningCount = await countRunningRunsForCompany(run.companyId);
+    if (companyRunningCount >= HEARTBEAT_COMPANY_MAX_CONCURRENT_RUNS) {
+      logger.info(
+        { runId: run.id, companyId: run.companyId, companyRunningCount, cap: HEARTBEAT_COMPANY_MAX_CONCURRENT_RUNS },
+        "claimQueuedRun: deferred — company concurrency cap reached",
+      );
       return null;
     }
 
